@@ -172,10 +172,52 @@ fun ChangePinDialog(
     var isRotating by remember { mutableStateOf(false) }
     var progressMessage by remember { mutableStateOf("") }
     var rotationResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var newRecoveryKey by remember { mutableStateOf<CharArray?>(null) }
     
     val context = LocalContext.current
 
-    if (rotationResult != null) {
+    if (newRecoveryKey != null) {
+        AlertDialog(
+            onDismissRequest = {
+                Arrays.fill(newRecoveryKey!!, ' ')
+                onDismiss()
+            },
+            title = { Text(stringResource(R.string.rotation_success_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.rotation_success_desc))
+                    Spacer(Modifier.height(16.dp))
+                    Box(
+                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)).padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            String(newRecoveryKey!!),
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.rotation_recovery_key_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val label = context.getString(R.string.recovery_key)
+                    ClipboardUtils.copyToClipboard(context, label, String(newRecoveryKey!!))
+                    Toast.makeText(context, context.getString(R.string.copy_label_copied, label), Toast.LENGTH_SHORT).show()
+                }) { Text(stringResource(R.string.copy)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    Arrays.fill(newRecoveryKey!!, ' ')
+                    onDismiss()
+                }) { Text(stringResource(R.string.done)) }
+            }
+        )
+    } else if (rotationResult != null) {
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text(if (rotationResult!!.first) stringResource(R.string.success) else stringResource(R.string.error)) },
@@ -249,8 +291,12 @@ fun ChangePinDialog(
                             oldPin = oldChars,
                             newPin = newChars,
                             onProgress = { progressMessage = it },
-                            onComplete = { success, msg ->
-                                rotationResult = Pair(success, msg)
+                            onComplete = { success, msg, recoveryKey ->
+                                if (success && recoveryKey != null) {
+                                    newRecoveryKey = recoveryKey
+                                } else {
+                                    rotationResult = Pair(success, msg)
+                                }
                                 isRotating = false
                                 Arrays.fill(oldChars, ' ')
                                 Arrays.fill(newChars, ' ')

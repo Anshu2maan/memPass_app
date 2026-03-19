@@ -85,6 +85,9 @@
     <string name="enable">Enable</string>
     <string name="app_settings">App Settings</string>
     <string name="session_expired_try_again">Session expired, please try again</string>
+    <string name="rotation_success_title">PIN Changed Successfully</string>
+    <string name="rotation_success_desc">Your Master PIN has been updated and your data has been re-encrypted with a new master key. Please save your NEW recovery key below.</string>
+    <string name="rotation_recovery_key_warning">IMPORTANT: Your old recovery key will no longer work. Save this new one immediately.</string>
 
     <!-- Password Screens -->
     <string name="search_accounts">Search accounts&#8230;</string>

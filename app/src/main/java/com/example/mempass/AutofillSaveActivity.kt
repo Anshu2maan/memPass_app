@@ -3,6 +3,7 @@ package com.example.mempass
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -40,6 +41,18 @@ class AutofillSaveActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // SECURITY FIX: Verify the calling package to prevent unauthorized IPC
+        val callingPkg = callingActivity?.packageName
+        val isTrustedCaller = callingPkg == "android" || 
+                             callingPkg == "com.android.settings" || 
+                             callingPkg == packageName
+        
+        if (!isTrustedCaller) {
+            Log.e("AutofillSave", "Unauthorized caller attempted to launch AutofillSaveActivity: $callingPkg")
+            finish()
+            return
+        }
         
         // SECURITY FIX: Apply screen security if enabled in settings
         val isScreenSecurityEnabled = securityPrefs.getBoolean(Constants.KEY_SCREEN_SECURITY_ENABLED, true)

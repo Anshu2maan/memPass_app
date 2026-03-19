@@ -42,6 +42,19 @@ class AutofillAuthActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // SECURITY FIX: Verify the calling package to prevent unauthorized IPC
+        // Autofill requests from the system typically come from the "android" package
+        val callingPkg = callingActivity?.packageName
+        val isTrustedCaller = callingPkg == "android" || 
+                             callingPkg == "com.android.settings" || 
+                             callingPkg == packageName
+        
+        if (!isTrustedCaller) {
+            Log.e("AutofillAuth", "Unauthorized caller attempted to launch AutofillAuthActivity: $callingPkg")
+            finish()
+            return
+        }
+
         // SECURITY FIX (#9): Apply screen security if enabled in settings
         val isScreenSecurityEnabled = securityPrefs.getBoolean(Constants.KEY_SCREEN_SECURITY_ENABLED, true)
         if (isScreenSecurityEnabled) {
