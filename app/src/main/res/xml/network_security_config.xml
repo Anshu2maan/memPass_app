@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Sabhi domains ke liye HTTP (Cleartext) traffic band -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Google APIs ke liye Certificate Pinning (MitM attack se bachne ke liye) -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">google.com</domain>
+
+        <pin-set>
+            <!-- Google Trust Services (GTS) Root R1 -->
+            <pin digest="SHA-256">h6801mQxJeWmVAnM5SxiuBgW6QXLRGEKaYv/h8yE08Q=</pin>
+            <!-- GlobalSign Root CA - R2 (Backup) -->
+            <pin digest="SHA-256">iie1VXtL7HzAMF+/PVPR9xzT8WZRG89ElXtuHU/7vaw=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>
