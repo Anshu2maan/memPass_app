@@ -39,7 +39,7 @@ class VaultMigrationManager @Inject constructor(
             val saltStr = prefs.getString(Constants.KEY_ARGON2_SALT, null)
             val salt = if (saltStr != null) Base64.decode(saltStr, Base64.DEFAULT) else KeyManager.generateSalt()
             
-            val oldPinKey = if (type == "argon2id") KeyManager.deriveKeyArgon2(oldPin, salt) 
+            val oldPinKey = if (type == "argon2id") KeyManager.deriveKeyArgon2(application, oldPin, salt) 
                             else KeyManager.deriveKeySha256(oldPin)
             
             val decryptedVerify = CryptoUtils.decryptToChars(storedHash, oldPinKey!!)
@@ -96,7 +96,7 @@ class VaultMigrationManager @Inject constructor(
             repository.migrateVaultData(passwords, documents, notes)
 
             val newSalt = KeyManager.generateSalt()
-            val newPinKey = KeyManager.deriveKeyArgon2(newPin, newSalt) ?: KeyManager.deriveKeySha256(newPin)
+            val newPinKey = KeyManager.deriveKeyArgon2(application, newPin, newSalt) ?: KeyManager.deriveKeySha256(newPin)
             
             val newEncryptedMKByPin = CryptoUtils.encrypt(newMasterKeyChars, newPinKey)
             val newWrappedMKByPin = KeystoreHelper.wrap(newEncryptedMKByPin)

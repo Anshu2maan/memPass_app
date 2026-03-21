@@ -1,5 +1,6 @@
 package com.example.mempass
 
+import android.app.Application
 import android.content.SharedPreferences
 import android.os.SystemClock
 import android.util.Base64
@@ -17,6 +18,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class VaultAuthManager @Inject constructor(
+    private val application: Application,
     private val vaultManager: VaultManager,
     @Named("SecurityPrefs") private val prefs: SharedPreferences
 ) {
@@ -57,7 +59,7 @@ class VaultAuthManager @Inject constructor(
         val masterKeyChars = CryptoUtils.bytesToChars(masterKeyBytes)
 
         val salt = KeyManager.generateSalt()
-        val pinKey = KeyManager.deriveKeyArgon2(pin, salt) ?: KeyManager.deriveKeySha256(pin)
+        val pinKey = KeyManager.deriveKeyArgon2(application, pin, salt) ?: KeyManager.deriveKeySha256(pin)
         
         val encryptedMasterKeyByPin = CryptoUtils.encrypt(masterKeyChars, pinKey)
         val recoveryKeyChars = KeyManager.generateRecoveryKey()
@@ -109,7 +111,7 @@ class VaultAuthManager @Inject constructor(
             var pinKey: SecretKeySpec? = null
             if (type == "argon2id" && saltStr != null) {
                 val salt = Base64.decode(saltStr, Base64.DEFAULT)
-                pinKey = KeyManager.deriveKeyArgon2(pin, salt)
+                pinKey = KeyManager.deriveKeyArgon2(application, pin, salt)
             }
             if (pinKey == null) pinKey = KeyManager.deriveKeySha256(pin)
 
@@ -151,7 +153,7 @@ class VaultAuthManager @Inject constructor(
             val masterKey = SecretKeySpec(masterKeyBytes, "AES")
 
             val salt = KeyManager.generateSalt()
-            val newPinKey = KeyManager.deriveKeyArgon2(newPin, salt) ?: KeyManager.deriveKeySha256(newPin)
+            val newPinKey = KeyManager.deriveKeyArgon2(application, newPin, salt) ?: KeyManager.deriveKeySha256(newPin)
             
             val newEncryptedMasterKeyByPin = CryptoUtils.encrypt(masterKeyChars, newPinKey)
             val newWrappedMasterKeyByPin = KeystoreHelper.wrap(newEncryptedMasterKeyByPin)

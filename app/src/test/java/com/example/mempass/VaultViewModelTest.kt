@@ -1,5 +1,6 @@
 package com.example.mempass
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
@@ -51,6 +52,9 @@ class VaultViewModelTest {
     @MockK
     lateinit var backupHelper: VaultBackupHelper
 
+    @MockK
+    lateinit var activityManager: ActivityManager
+
     private lateinit var viewModel: VaultViewModel
 
     @Before
@@ -87,6 +91,15 @@ class VaultViewModelTest {
         every { editor.putLong(any(), any()) } returns editor
         every { editor.apply() } just Runs
 
+        // Mock ActivityManager for memory check
+        val memoryInfo = ActivityManager.MemoryInfo()
+        memoryInfo.totalMem = 4L * 1024 * 1024 * 1024 // 4GB
+        every { application.getSystemService(Context.ACTIVITY_SERVICE) } returns activityManager
+        every { activityManager.getMemoryInfo(any()) } sideEffect {
+            val info = it.invocation.args[0] as ActivityManager.MemoryInfo
+            info.totalMem = 4L * 1024 * 1024 * 1024
+        }
+
         // Mock Repository and flows
         every { repository.allPasswords } returns flowOf(emptyList())
         every { repository.allDocuments } returns flowOf(emptyList())
@@ -99,14 +112,14 @@ class VaultViewModelTest {
         // Mock KeyManager
         mockkObject(KeyManager)
         every { KeyManager.generateSalt() } returns "salt".toByteArray()
-        every { KeyManager.deriveKeyArgon2(any(), any()) } returns SecretKeySpec("32byteslongmockkey32byteslongmock".toByteArray(), "AES")
+        every { KeyManager.deriveKeyArgon2(any(), any(), any()) } returns SecretKeySpec("32byteslongmockkey32byteslongmock".toByteArray(), "AES")
         every { KeyManager.deriveKeySha256(any()) } returns SecretKeySpec("32byteslongmockkey32byteslongmock".toByteArray(), "AES")
-        every { KeyManager.generateRecoveryKey() } returns "ABCD-1234-EFGH-5678"
+        every { KeyManager.generateRecoveryKey() } returns "ABCD-1234-EFGH-5678".toCharArray()
 
         // Mock CryptoUtils
         mockkObject(CryptoUtils)
-        every { CryptoUtils.encrypt(any(), any()) } returns "encrypted_verify_string"
-        every { CryptoUtils.decrypt(any(), any()) } returns "VERIFY"
+        every { CryptoUtils.encrypt(any<CharArray>(), any()) } returns "encrypted_verify_string".toByteArray()
+        every { CryptoUtils.decryptToChars(any(), any()) } returns "VERIFY".toCharArray()
 
         // Mock VaultManager
         every { vaultManager.setKey(any()) } just Runs
@@ -130,7 +143,7 @@ class VaultViewModelTest {
     fun `test setupVault saves hash and returns recovery key`() {
         val recoveryKey = viewModel.setupVault("123456".toCharArray())
         
-        assertEquals("ABCD-1234-EFGH-5678", recoveryKey)
+        assertEquals("ABCD-1234-EFGH-5678", String(recoveryKey))
         verify { editor.putString(any(), any()) }
         verify { editor.apply() }
     }
@@ -142,7 +155,7 @@ class VaultViewModelTest {
         every { sharedPreferences.getString(any(), null) } returns "some_salt"
         
         // Mock successful verification
-        every { CryptoUtils.decrypt(any(), any()) } returns "VERIFY"
+        every { CryptoUtils.decryptToChars(any(), any()) } returns "VERIFY".toCharArray()
 
         val result = viewModel.unlockVault("123456".toCharArray())
         
@@ -156,7 +169,7 @@ class VaultViewModelTest {
         every { sharedPreferences.getInt(any(), 0) } returns 0
         
         // Mock failed verification
-        every { CryptoUtils.decrypt(any(), any()) } returns "WRONG"
+        every { CryptoUtils.decryptToChars(any(), any()) } returns "WRONG".toCharArray()
 
         val result = viewModel.unlockVault("wrong_pin".toCharArray())
         

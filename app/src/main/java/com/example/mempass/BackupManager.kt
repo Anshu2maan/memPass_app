@@ -1,18 +1,19 @@
 package com.example.mempass
 
-import android.content.Context
+import android.app.Application
 import android.util.Base64
 import android.util.JsonReader
 import android.util.JsonWriter
 import android.util.Log
 import java.io.*
 import java.util.*
-import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class BackupManager @Inject constructor() {
+class BackupManager @Inject constructor(
+    private val application: Application
+) {
     private val TAG = "BackupManager"
 
     fun exportToBackup(
@@ -24,7 +25,8 @@ class BackupManager @Inject constructor() {
     ) {
         try {
             val salt = KeyManager.generateSalt()
-            val backupKey = KeyManager.deriveKeyArgon2(backupPassword, salt) ?: KeyManager.deriveKeySha256(backupPassword)
+            val backupKey = KeyManager.deriveKeyArgon2(application, backupPassword, salt) 
+                ?: KeyManager.deriveKeySha256(backupPassword)
             
             val out = ByteArrayOutputStream()
             val writer = JsonWriter(OutputStreamWriter(out, "UTF-8"))
@@ -107,7 +109,8 @@ class BackupManager @Inject constructor() {
             if (inputStream.read(salt) != 16) throw Exception("Invalid backup file: salt missing")
             
             val encrypted = inputStream.readBytes()
-            val backupKey = KeyManager.deriveKeyArgon2(backupPassword, salt) ?: KeyManager.deriveKeySha256(backupPassword)
+            val backupKey = KeyManager.deriveKeyArgon2(application, backupPassword, salt) 
+                ?: KeyManager.deriveKeySha256(backupPassword)
             
             val plaintext = CryptoUtils.decryptRaw(encrypted, backupKey)
             val reader = JsonReader(InputStreamReader(ByteArrayInputStream(plaintext), "UTF-8"))

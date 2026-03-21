@@ -9,11 +9,27 @@ object Constants {
     const val RECOVERY_KEY_LENGTH = 24
     const val GRACE_PERIOD_MS = 5 * 60 * 1000L 
     
-    // Argon2id Parameters
+    /**
+     * Argon2id Parameters (Production-ready)
+     * 
+     * Rationale: These parameters provide strong resistance against GPU and ASIC-based brute-force attacks.
+     * Argon2id is used to provide both side-channel resistance and memory-hard security.
+     * 
+     * - Memory (64MB): High enough to be expensive for attackers but manageable for modern mobile devices.
+     * - Iterations (3): Ensures sufficient computational time to slow down brute-force attempts.
+     * - Parallelism (2): Optimized for multi-core mobile processors.
+     */
     const val ARGON2_ITERATIONS = 3
-    const val ARGON2_MEMORY = 65536 
-    const val ARGON2_PARALLELISM = 1
+    const val ARGON2_MEMORY = 65536 // 64 MB in KiB
+    const val ARGON2_PARALLELISM = 2
     const val AES_KEY_SIZE = 256
+
+    /**
+     * Fallback values for low-end devices (typically < 2GB total RAM).
+     * Reduced to prevent OOM errors and excessive UI lag during key derivation.
+     */
+    const val ARGON2_ITERATIONS_LOW_END = 2
+    const val ARGON2_MEMORY_LOW_END = 32768 // 32 MB in KiB
     
     // UI & Health Thresholds
     const val WEAK_PASSWORD_THRESHOLD = 0.5f
