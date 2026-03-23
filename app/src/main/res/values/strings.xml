@@ -148,8 +148,10 @@
     <string name="export_local">Export Local Backup</string>
     <string name="export_local_desc">Save encrypted .mempass file</string>
     <string name="import_local">Import Local Backup</string>
+    <string name="import_local_desc">Restore your data from a .mempass file</string>
     <string name="export_history">Export History / Logs</string>
     <string name="restore_drive">Restore from Drive</string>
+    <string name="restore_drive_desc">Download and merge latest cloud backup</string>
     <string name="danger_zone">Danger Zone</string>
     <string name="factory_reset">Factory Reset Vault</string>
     <string name="factory_reset_desc">Delete ALL data and files forever</string>
@@ -195,6 +197,7 @@
     <string name="history">History</string>
     <string name="view_logs">View Logs</string>
     <string name="export_vault">Export Vault</string>
+    <string name="tools_utility">Tools &amp; Utility</string>
 
     <!-- Document Screens -->
     <string name="search_docs">Search docs&#8230;</string>
