@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.*
 import javax.inject.Inject
 import javax.inject.Named
@@ -36,6 +37,39 @@ class DocumentViewModel @Inject constructor(
     private val imageCompressor: ImageCompressor,
     private val pdfCompressor: PdfCompressor
 ) : BaseVaultViewModel(application, repository, prefs, historyPrefs, vaultManager, authManager, biometricHelper, cameraHelper) {
+
+    init {
+        clearOldTemporaryFiles()
+    }
+
+    private fun clearOldTemporaryFiles() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cacheDir = getApplication<Application>().cacheDir
+            cacheDir.listFiles { file -> 
+                file.name.startsWith("temp_share_") || file.name.startsWith("export_") || file.name.startsWith("temp_thumb_")
+            }?.forEach { it.delete() }
+        }
+    }
+
+    private fun wipeFile(file: File) {
+        try {
+            if (file.exists()) {
+                val raf = RandomAccessFile(file, "rws")
+                val length = raf.length()
+                val blank = ByteArray(8192)
+                var written: Long = 0
+                while (written < length) {
+                    val toWrite = if (length - written < 8192) (length - written).toInt() else 8192
+                    raf.write(blank, 0, toWrite)
+                    written += toWrite
+                }
+                raf.close()
+                file.delete()
+            }
+        } catch (e: Exception) {
+            file.delete()
+        }
+    }
 
     companion object {
         const val PATH_SEPARATOR = "|"
@@ -87,7 +121,7 @@ class DocumentViewModel @Inject constructor(
                 }
                 
                 FileEncryptor.encryptFile(tempThumb, thumbnailFile, key)
-                if (tempThumb.exists()) tempThumb.delete()
+                wipeFile(tempThumb)
                 thumbnailFile.absolutePath
             } catch (e: Exception) {
                 Log.e("DocumentViewModel", "Thumbnail generation failed", e)
@@ -96,7 +130,10 @@ class DocumentViewModel @Inject constructor(
         }
     }
 
+    private val thumbnailCache = mutableMapOf<String, android.graphics.Bitmap>()
+
     suspend fun getDecryptedThumbnail(path: String): android.graphics.Bitmap? {
+        thumbnailCache[path]?.let { return it }
         val key = getVaultKey() ?: return null
         return withContext(Dispatchers.IO) {
             try {
@@ -108,6 +145,9 @@ class DocumentViewModel @Inject constructor(
                 
                 java.util.Arrays.fill(decryptedBytes, 0.toByte())
                 
+                if (bitmap != null) {
+                    thumbnailCache[path] = bitmap
+                }
                 bitmap
             } catch (e: Exception) {
                 Log.e("DocumentViewModel", "Failed to decrypt thumbnail", e)
@@ -122,34 +162,52 @@ class DocumentViewModel @Inject constructor(
             return
         }
         
-        // SECURITY FIX: Encrypt synchronously BEFORE the coroutine starts.
-        // This prevents a race condition where the UI wipes the source CharArrays 
-        // before the background thread can encrypt them.
         val encFields = CryptoUtils.encrypt(fieldsJson, key)
         val encNotes = CryptoUtils.encrypt(notes, key)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                    var thumbnailPath: String? = null
+                    var currentThumbnailPath: String? = null
                     val allDocs = repository.allDocuments.first()
                     
                     if (id != 0) {
                         val oldDoc = allDocs.find { it.id == id }
                         oldDoc?.let { old ->
-                            val oldPaths = splitPaths(old.filePaths).toSet()
-                            val newPaths = filePaths.toSet()
+                            val oldPaths = splitPaths(old.filePaths)
+                            val newPaths = filePaths
                             
-                            (oldPaths - newPaths).forEach { fileUtils.deleteFileIfExists(it) }
+                            val deletedPaths = oldPaths.toSet() - newPaths.toSet()
+                            deletedPaths.forEach { fileUtils.deleteFileIfExists(it) }
                             
-                            thumbnailPath = old.thumbnailPath
-                            if (filePaths.firstOrNull() != oldPaths.firstOrNull()) {
+                            currentThumbnailPath = old.thumbnailPath
+                            
+                            // Fix 3: Handle thumbnail regeneration if first file changed
+                            if (newPaths.isNotEmpty() && (oldPaths.isEmpty() || newPaths[0] != oldPaths[0])) {
                                 if (old.thumbnailPath != null) {
                                     fileUtils.deleteFileIfExists(old.thumbnailPath)
-                                    thumbnailPath = null
+                                    thumbnailCache.remove(old.thumbnailPath)
+                                }
+                                
+                                // Generate new thumbnail from the new first file
+                                val firstFile = File(newPaths[0])
+                                if (firstFile.exists()) {
+                                    val tempDecrypted = File(getApplication<Application>().cacheDir, "temp_thumb_gen_${UUID.randomUUID()}")
+                                    try {
+                                        FileEncryptor.decryptFileToFile(firstFile, tempDecrypted, key)
+                                        currentThumbnailPath = generateAndSaveThumbnailFromPlainFile(tempDecrypted)
+                                    } finally {
+                                        wipeFile(tempDecrypted)
+                                    }
+                                } else {
+                                    currentThumbnailPath = null
                                 }
                             }
                         }
+                    } else if (filePaths.isNotEmpty()) {
+                        // For new documents, saveUriToInternalEncrypted already handles the thumbnail
+                        // But if filePaths was manually constructed, we might need to handle it.
+                        // However, standard flow uses saveUriToInternalEncrypted.
                     }
 
                     val doc = DocumentEntry(
@@ -157,7 +215,7 @@ class DocumentViewModel @Inject constructor(
                         encryptedFields = encFields,
                         encryptedNotes = encNotes,
                         filePaths = filePaths.joinToString(PATH_SEPARATOR),
-                        thumbnailPath = thumbnailPath,
+                        thumbnailPath = currentThumbnailPath,
                         expiryDate = expiryDate,
                         isFavorite = isFavorite
                     )
@@ -190,7 +248,10 @@ class DocumentViewModel @Inject constructor(
     fun deleteDocument(entry: DocumentEntry) {
         viewModelScope.launch(Dispatchers.IO) {
             splitPaths(entry.filePaths).forEach { fileUtils.deleteFileIfExists(it) }
-            fileUtils.deleteFileIfExists(entry.thumbnailPath ?: "")
+            if (entry.thumbnailPath != null) {
+                fileUtils.deleteFileIfExists(entry.thumbnailPath)
+                thumbnailCache.remove(entry.thumbnailPath)
+            }
             repository.deleteDocument(entry)
         }
     }
@@ -199,7 +260,10 @@ class DocumentViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             entries.forEach { entry ->
                 splitPaths(entry.filePaths).forEach { fileUtils.deleteFileIfExists(it) }
-                fileUtils.deleteFileIfExists(entry.thumbnailPath ?: "")
+                if (entry.thumbnailPath != null) {
+                    fileUtils.deleteFileIfExists(entry.thumbnailPath)
+                    thumbnailCache.remove(entry.thumbnailPath)
+                }
                 repository.deleteDocument(entry)
             }
         }
@@ -238,8 +302,8 @@ class DocumentViewModel @Inject constructor(
             Log.e("DocumentViewModel", "Encryption failed", e)
             null
         } finally {
-            if (tempFile.exists()) tempFile.delete()
-            if (fileToEncrypt != tempFile && fileToEncrypt.exists()) fileToEncrypt.delete()
+            if (tempFile.exists()) wipeFile(tempFile)
+            if (fileToEncrypt != tempFile && fileToEncrypt.exists()) wipeFile(fileToEncrypt)
         }
     }
 
@@ -298,8 +362,8 @@ class DocumentViewModel @Inject constructor(
                     
                     viewModelScope.launch {
                         kotlinx.coroutines.delay(60000)
-                        if (tempDecrypted.exists()) tempDecrypted.delete()
-                        if (finalFileToShare != tempDecrypted && finalFileToShare.exists()) finalFileToShare.delete()
+                        wipeFile(tempDecrypted)
+                        if (finalFileToShare != tempDecrypted && finalFileToShare.exists()) wipeFile(finalFileToShare)
                     }
                     
                 } catch (e: Exception) {

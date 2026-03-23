@@ -56,11 +56,11 @@ fun NavGraphBuilder.documentGraph(navController: NavHostController) {
     }
     composable(
         route = "add_document?id={id}",
-        arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })
+        arguments = listOf(navArgument("id") { type = NavType.IntType; defaultValue = 0 })
     ) { backStackEntry ->
-        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull()
+        val id = backStackEntry.arguments?.getInt("id") ?: 0
         val docViewModel: DocumentViewModel = hiltViewModel()
-        AddDocumentScreen(navController, docViewModel, id ?: 0)
+        AddDocumentScreen(navController, docViewModel, id)
     }
 }
 

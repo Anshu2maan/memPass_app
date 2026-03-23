@@ -70,7 +70,6 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
     var title by remember(existingDoc) { mutableStateOf(existingDoc?.title ?: "") }
     var type by remember(existingDoc) { mutableStateOf(existingDoc?.documentType ?: context.getString(R.string.sub_other)) }
     
-    // Fix: Using remember with state for notes as CharArray to prevent string pooling leaks
     val notesState = remember(existingDoc) {
         val chars = if(existingDoc != null) viewModel.decryptToChars(existingDoc.encryptedNotes) else CharArray(0)
         mutableStateOf(chars)
@@ -97,16 +96,15 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 
     val hasChanges = remember(title, type, notesState.value, filePaths, expiryDate, isFavorite) {
         val initialNotesChars = if(existingDoc != null) viewModel.decryptToChars(existingDoc.encryptedNotes) else CharArray(0)
-        val initialNotes = String(initialNotesChars)
-        val currentNotes = String(notesState.value)
-        CryptoUtils.wipe(initialNotesChars)
+        val changed = title != (existingDoc?.title ?: "") ||
+            type != (existingDoc?.documentType ?: context.getString(R.string.sub_other)) ||
+            !notesState.value.contentEquals(initialNotesChars) ||
+            filePaths != DocumentViewModel.splitPaths(existingDoc?.filePaths) ||
+            expiryDate != existingDoc?.expiryDate ||
+            isFavorite != (existingDoc?.isFavorite ?: false)
         
-        title != (existingDoc?.title ?: "") ||
-        type != (existingDoc?.documentType ?: context.getString(R.string.sub_other)) ||
-        currentNotes != initialNotes ||
-        filePaths != DocumentViewModel.splitPaths(existingDoc?.filePaths) ||
-        expiryDate != existingDoc?.expiryDate ||
-        isFavorite != (existingDoc?.isFavorite ?: false)
+        CryptoUtils.wipe(initialNotesChars)
+        changed
     }
 
     val onExit: () -> Unit = {
@@ -295,12 +293,18 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                     Spacer(Modifier.height(12.dp))
                     ocrResults!!.forEach { (key, value) ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).clickable { 
-                            if(key.contains("Number")) title = value
-                            if(key == "Potential Expiry" || key == "Expiry Date") {
-                                try {
-                                    val date = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(value)
-                                    expiryDate = date?.time
-                                } catch (e: Exception) {}
+                            if(key.contains("Number", ignoreCase = true)) title = value
+                            if(key.lowercase().contains("expiry")) {
+                                val formats = listOf("dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", "dd-MM-yyyy")
+                                for (format in formats) {
+                                    try {
+                                        val date = SimpleDateFormat(format, Locale.getDefault()).parse(value)
+                                        if (date != null) {
+                                            expiryDate = date.time
+                                            break
+                                        }
+                                    } catch (e: Exception) {}
+                                }
                             }
                             Toast.makeText(context, "Filled $key", Toast.LENGTH_SHORT).show()
                         }) {
