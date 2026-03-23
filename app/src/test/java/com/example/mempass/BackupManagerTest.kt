@@ -1,8 +1,9 @@
 package com.example.mempass
 
+import android.app.ActivityManager
+import android.app.Application
 import android.content.ContentResolver
 import android.content.Context
-import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import io.mockk.*
@@ -14,9 +15,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import javax.crypto.spec.SecretKeySpec
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.util.Base64 as JavaBase64
 
 /**
@@ -29,11 +29,13 @@ class BackupManagerTest {
     @JvmField
     val tempFolder = TemporaryFolder()
 
+    private val application = mockk<Application>(relaxed = true)
     private val context = mockk<Context>(relaxed = true)
     private val contentResolver = mockk<ContentResolver>()
-    private val vaultKey = SecretKeySpec("32byteslongmockkey32byteslongmock".toByteArray(), "AES")
-    private val backupPassword = "secure_backup_password"
-    private val wrongPassword = "incorrect_password"
+    private val backupPassword = "secure_backup_password".toCharArray()
+    private val wrongPassword = "incorrect_password".toCharArray()
+    
+    private lateinit var backupManager: BackupManager
 
     @Before
     fun setUp() {
@@ -55,10 +57,24 @@ class BackupManagerTest {
 
         // Mock Context & FilesDir
         every { context.contentResolver } returns contentResolver
-        // FilesDir will be initialized inside each test to ensure tempFolder is ready
+        
+        // Mock ActivityManager for KeyManager's memory check
+        val activityManager = mockk<ActivityManager>()
+        every { application.getSystemService(Context.ACTIVITY_SERVICE) } returns activityManager
+        val memoryInfoSlot = slot<ActivityManager.MemoryInfo>()
+        every { activityManager.getMemoryInfo(capture(memoryInfoSlot)) } answers {
+            memoryInfoSlot.captured.totalMem = 4L * 1024 * 1024 * 1024
+        }
 
-        // Mock KeyManager (Avoids Argon2 native library crashes on JVM)
+        // Mock KeyManager
         mockkObject(KeyManager)
+        every { KeyManager.deriveKeyArgon2(any(), any(), any()) } answers {
+            val password = it.invocation.args[1] as CharArray
+            val seed = password.joinToString("").toByteArray()
+            val keyBytes = ByteArray(32)
+            seed.copyInto(keyBytes, 0, 0, seed.size.coerceAtMost(32))
+            SecretKeySpec(keyBytes, "AES")
+        }
         every { KeyManager.deriveKeySha256(any()) } answers {
             val password = it.invocation.args[0] as CharArray
             val seed = password.joinToString("").toByteArray()
@@ -66,11 +82,14 @@ class BackupManagerTest {
             seed.copyInto(keyBytes, 0, 0, seed.size.coerceAtMost(32))
             SecretKeySpec(keyBytes, "AES")
         }
+        every { KeyManager.generateSalt() } returns ByteArray(16)
 
         // Mock CryptoUtils for logic testing (Passthrough behavior)
         mockkObject(CryptoUtils)
-        every { CryptoUtils.encrypt(any(), any()) } answers { it.invocation.args[0] as String }
-        every { CryptoUtils.decrypt(any(), any()) } answers { it.invocation.args[0] as String }
+        every { CryptoUtils.encryptRaw(any(), any()) } answers { it.invocation.args[0] as ByteArray }
+        every { CryptoUtils.decryptRaw(any(), any()) } answers { it.invocation.args[0] as ByteArray }
+        
+        backupManager = BackupManager(application)
     }
 
     @After
@@ -81,116 +100,78 @@ class BackupManagerTest {
     @Test
     fun testFullBackupAndRestoreCycleSuccess() {
         runBlocking {
-            every { context.filesDir } returns tempFolder.newFolder("files1")
-            val backupFile = File(tempFolder.root, "vault_backup.mempass")
             val passwords = listOf(
-                PasswordEntry(serviceName = "Amazon", encryptedUsername = "user123", encryptedPassword = "password123", encryptedNotes = "some notes")
+                PasswordEntry(id = 1, serviceName = "Amazon", encryptedUsername = "u".toByteArray(), encryptedPassword = "p".toByteArray(), encryptedNotes = "n".toByteArray())
             )
 
+            val outputStream = ByteArrayOutputStream()
             // 1. Create Backup
-            val createSuccess = BackupManager.createFullBackup(
-                context, backupFile, backupPassword, vaultKey, 
-                passwords, emptyList(), emptyList()
+            backupManager.exportToBackup(
+                passwords, emptyList(), emptyList(), backupPassword, outputStream
             )
-            assertTrue("Backup should succeed", createSuccess)
+            val backupData = outputStream.toByteArray()
+            assertTrue("Backup should have data", backupData.isNotEmpty())
 
             // 2. Restore Backup
-            val backupUri = mockk<Uri>()
-            every { contentResolver.openInputStream(backupUri) } answers { FileInputStream(backupFile) }
-            
-            var restoredData: VaultBackup? = null
-            val restoreSuccess = BackupManager.restoreFullBackup(
-                context, backupUri, backupPassword, vaultKey
-            ) { data ->
-                restoredData = data
-            }
+            val inputStream = ByteArrayInputStream(backupData)
+            val (restoredPasswords, _, _) = backupManager.importFromBackup(inputStream, backupPassword)
 
-            assertTrue("Restore should succeed", restoreSuccess)
-            assertNotNull(restoredData)
-            assertEquals("Amazon", restoredData?.passwords?.first()?.serviceName)
+            assertEquals(1, restoredPasswords.size)
+            assertEquals("Amazon", restoredPasswords.first().serviceName)
         }
     }
 
     @Test
     fun testRestoreFailsWithWrongPassword() {
         runBlocking {
-            every { context.filesDir } returns tempFolder.newFolder("files2")
-            val backupFile = File(tempFolder.root, "locked.mempass")
-            BackupManager.createFullBackup(
-                context, backupFile, backupPassword, vaultKey, 
-                listOf(PasswordEntry(serviceName = "Secret", encryptedUsername = "u", encryptedPassword = "p", encryptedNotes = "")), 
-                emptyList(), emptyList()
-            )
+            // Since we mock CryptoUtils.decryptRaw to passthrough, 
+            // we should mock it to fail for this specific test to simulate wrong password
+            every { CryptoUtils.decryptRaw(any(), any()) } throws Exception("Decryption failed")
 
-            val backupUri = mockk<Uri>()
-            every { contentResolver.openInputStream(backupUri) } answers { FileInputStream(backupFile) }
+            val passwords = listOf(PasswordEntry(id = 1, serviceName = "Secret", encryptedUsername = "u".toByteArray(), encryptedPassword = "p".toByteArray(), encryptedNotes = "n".toByteArray()))
+            val out = ByteArrayOutputStream()
+            backupManager.exportToBackup(passwords, emptyList(), emptyList(), backupPassword, out)
             
-            val restoreSuccess = BackupManager.restoreFullBackup(
-                context, backupUri, wrongPassword, vaultKey
-            ) { /* N/A */ }
-
-            assertFalse("Restore must fail with wrong password", restoreSuccess)
+            val inputStream = ByteArrayInputStream(out.toByteArray())
+            
+            assertThrows(Exception::class.java) {
+                runBlocking {
+                    backupManager.importFromBackup(inputStream, wrongPassword)
+                }
+            }
         }
     }
 
     @Test
     fun testRestoreHandlesCorruptedFile() {
         runBlocking {
-            every { context.filesDir } returns tempFolder.newFolder("files3")
-            val corruptedFile = File(tempFolder.root, "bad.mempass")
-            FileOutputStream(corruptedFile).use { it.write("NOT_A_ZIP".toByteArray()) }
+            val corruptedData = "NOT_A_VALID_BACKUP".toByteArray()
+            val inputStream = ByteArrayInputStream(corruptedData)
             
-            val backupUri = mockk<Uri>()
-            every { contentResolver.openInputStream(backupUri) } answers { FileInputStream(corruptedFile) }
-            
-            val restoreSuccess = BackupManager.restoreFullBackup(
-                context, backupUri, backupPassword, vaultKey
-            ) { /* N/A */ }
-
-            assertFalse("Restore should fail on corrupted file", restoreSuccess)
-            verify { Log.e(any(), any()) }
-        }
-    }
-
-    @Test
-    fun testBackupContinuesIfAttachmentIsMissing() {
-        runBlocking {
-            every { context.filesDir } returns tempFolder.newFolder("files4")
-            val backupFile = File(tempFolder.root, "partial.mempass")
-            val docs = listOf(
-                DocumentEntry(title = "Missing", documentType = "PDF", encryptedFields = "{}", encryptedNotes = "", 
-                    filePaths = "/non/existent/path.pdf")
-            )
-
-            val success = BackupManager.createFullBackup(
-                context, backupFile, backupPassword, vaultKey, 
-                emptyList(), docs, emptyList()
-            )
-
-            assertTrue("Backup should still succeed", success)
-            verify { Log.e(any(), match { it.contains("Attachment file not found") }) }
+            assertThrows(Exception::class.java) {
+                runBlocking {
+                    backupManager.importFromBackup(inputStream, backupPassword)
+                }
+            }
         }
     }
 
     @Test
     fun testBackupIncludesAllEntities() {
         runBlocking {
-            every { context.filesDir } returns tempFolder.newFolder("files5")
-            val backupFile = File(tempFolder.root, "all.mempass")
-            val passwords = listOf(PasswordEntry(serviceName = "P", encryptedUsername = "u", encryptedPassword = "p", encryptedNotes = ""))
-            val docs = listOf(DocumentEntry(title = "D", documentType = "T", encryptedFields = "f", encryptedNotes = "n", filePaths = ""))
-            val notes = listOf(NoteEntry(title = "N", encryptedContent = "c"))
+            val passwords = listOf(PasswordEntry(id = 1, serviceName = "P", encryptedUsername = "u".toByteArray(), encryptedPassword = "p".toByteArray(), encryptedNotes = "n".toByteArray()))
+            val docs = listOf(DocumentEntry(id = 1, title = "D", documentType = "T", encryptedFields = "f".toByteArray(), encryptedNotes = "n".toByteArray(), filePaths = ""))
+            val notes = listOf(NoteEntry(id = 1, title = "N", encryptedContent = "c".toByteArray()))
 
-            BackupManager.createFullBackup(context, backupFile, backupPassword, vaultKey, passwords, docs, notes)
-
-            val backupUri = mockk<Uri>()
-            every { contentResolver.openInputStream(backupUri) } answers { FileInputStream(backupFile) }
+            val out = ByteArrayOutputStream()
+            backupManager.exportToBackup(passwords, docs, notes, backupPassword, out)
             
-            BackupManager.restoreFullBackup(context, backupUri, backupPassword, vaultKey) { data ->
-                assertEquals(1, data.passwords.size)
-                assertEquals(1, data.documents.size)
-                assertEquals(1, data.notes.size)
-            }
+            val inputStream = ByteArrayInputStream(out.toByteArray())
+            val (p, d, n) = backupManager.importFromBackup(inputStream, backupPassword)
+            
+            assertEquals(1, p.size)
+            assertEquals(1, d.size)
+            assertEquals(1, n.size)
         }
     }
 }

@@ -23,7 +23,7 @@ class PasswordViewModel @Inject constructor(
 ) : BaseVaultViewModel(application, repository, prefs, historyPrefs, vaultManager, authManager, biometricHelper, cameraHelper) {
     val allPasswords: Flow<List<PasswordEntry>> = repository.allPasswords
 
-    fun savePassword(service: String, user: CharArray, pass: CharArray, notes: CharArray, totpSecret: CharArray? = null, id: Int = 0) {
+    fun savePassword(service: String, user: CharArray, pass: CharArray, notes: CharArray, totpSecret: CharArray? = null, isFavorite: Boolean = false, id: Int = 0) {
         val key = getVaultKey() ?: return
         viewModelScope.launch {
             try {
@@ -33,12 +33,12 @@ class PasswordViewModel @Inject constructor(
                     encryptedUsername = CryptoUtils.encrypt(user, key),
                     encryptedPassword = CryptoUtils.encrypt(pass, key),
                     encryptedNotes = CryptoUtils.encrypt(notes, key),
-                    encryptedTotpSecret = totpSecret?.let { CryptoUtils.encrypt(it, key) }
+                    encryptedTotpSecret = totpSecret?.let { CryptoUtils.encrypt(it, key) },
+                    isFavorite = isFavorite
                 )
                 repository.insertPassword(entry)
             } catch (e: Exception) {
                 Log.e("PasswordViewModel", "Failed to save password due to encryption error", e)
-                // In a real app, we should propagate this to UI
             }
         }
     }

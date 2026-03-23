@@ -171,6 +171,8 @@ fun DetailDialog(
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null,
+    onFavoriteToggle: (() -> Unit)? = null,
+    isFavorite: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Dialog(
@@ -194,6 +196,17 @@ fun DetailDialog(
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
                     Spacer(Modifier.width(8.dp))
                     Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                    
+                    if (onFavoriteToggle != null) {
+                        IconButton(onClick = onFavoriteToggle) {
+                            Icon(
+                                if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = null,
+                                tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
                     if (onEdit != null) {
                         IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, tint = BrandIndigo) }
                     }

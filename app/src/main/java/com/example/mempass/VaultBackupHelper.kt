@@ -1,5 +1,6 @@
 package com.example.mempass
 
+import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
@@ -22,6 +23,7 @@ import javax.inject.Singleton
 
 @Singleton
 class VaultBackupHelper @Inject constructor(
+    private val application: Application,
     private val repository: VaultRepository,
     private val driveHelper: DriveHelper,
     private val sharingUtils: SharingUtils,

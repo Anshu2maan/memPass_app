@@ -67,11 +67,21 @@ fun PasswordListScreen(navController: NavHostController, viewModel: PasswordView
             if (passwords.isEmpty()) {
                 ModernEmptyState(Icons.Default.VpnKey, stringResource(R.string.vault_empty))
             } else {
-                val filtered = passwords.filter { it.serviceName.contains(searchQuery, true) }
-                    .sortedWith(compareByDescending<PasswordEntry> { it.isFavorite }.thenBy { it.serviceName.lowercase() })
+                val filtered = remember(passwords, searchQuery) {
+                    passwords.filter { entry ->
+                        val matchesService = entry.serviceName.contains(searchQuery, true)
+                        
+                        // Also search in username (decryption required)
+                        val userChars = viewModel.decryptToChars(entry.encryptedUsername)
+                        val matchesUser = String(userChars).contains(searchQuery, true)
+                        CryptoUtils.wipe(userChars)
+                        
+                        matchesService || matchesUser
+                    }.sortedWith(compareByDescending<PasswordEntry> { it.isFavorite }.thenBy { it.serviceName.lowercase() })
+                }
                 
                 LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(filtered) { entry ->
+                    items(filtered, key = { it.id }) { entry ->
                         Card(
                             modifier = Modifier.fillMaxWidth().clickable { selectedEntry = entry },
                             shape = RoundedCornerShape(20.dp),
@@ -87,8 +97,13 @@ fun PasswordListScreen(navController: NavHostController, viewModel: PasswordView
                                     CryptoUtils.wipe(userChars)
                                     Text(user, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                                 }
-                                if (entry.isFavorite) {
-                                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFB800), modifier = Modifier.size(20.dp))
+                                IconButton(onClick = { viewModel.toggleFavorite(entry) }) {
+                                    Icon(
+                                        if (entry.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                        contentDescription = null,
+                                        tint = if (entry.isFavorite) Color(0xFFFFB800) else Color.Gray.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(24.dp)
+                                    )
                                 }
                             }
                         }
@@ -99,8 +114,10 @@ fun PasswordListScreen(navController: NavHostController, viewModel: PasswordView
     }
 
     if (selectedEntry != null) {
+        // Re-fetch the entry from the list to get updated favorite status if changed
+        val currentEntry = passwords.find { it.id == selectedEntry!!.id } ?: selectedEntry!!
         PasswordDetailDialog(
-            entry = selectedEntry!!,
+            entry = currentEntry,
             viewModel = viewModel,
             onDismiss = { selectedEntry = null },
             onEdit = { 
@@ -134,7 +151,9 @@ fun PasswordDetailDialog(entry: PasswordEntry, viewModel: PasswordViewModel, onD
         title = entry.serviceName, 
         onDismiss = onDismiss, 
         onDelete = { viewModel.deletePassword(entry); onDismiss() },
-        onEdit = onEdit
+        onEdit = onEdit,
+        onFavoriteToggle = { viewModel.toggleFavorite(entry) },
+        isFavorite = entry.isFavorite
     ) {
         val decryptedUsernameChars = viewModel.decryptToChars(entry.encryptedUsername)
         val decryptedUsername = String(decryptedUsernameChars)
@@ -142,7 +161,7 @@ fun PasswordDetailDialog(entry: PasswordEntry, viewModel: PasswordViewModel, onD
         
         DetailItem(stringResource(R.string.username_email), decryptedUsername, Icons.Default.Person) {
             ClipboardUtils.copyToClipboard(context, "Username", decryptedUsername)
-            Toast.makeText(context, context.getString(R.string.copy_label_copied, "Username"), Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.copy_label_copied, "Username") + " (Auto-clears in 30s)", Toast.LENGTH_SHORT).show()
         }
         
         val decryptedPassChars = viewModel.decryptToChars(entry.encryptedPassword)
@@ -158,7 +177,7 @@ fun PasswordDetailDialog(entry: PasswordEntry, viewModel: PasswordViewModel, onD
                 Spacer(Modifier.width(8.dp))
                 IconButton(onClick = { 
                     ClipboardUtils.copyToClipboard(context, "Password", decryptedPass)
-                    Toast.makeText(context, context.getString(R.string.copy_label_copied, "Password"), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.copy_label_copied, "Password") + " (Auto-clears in 30s)", Toast.LENGTH_SHORT).show()
                 }, modifier = Modifier.size(24.dp)) {
                     Icon(Icons.Default.ContentCopy, null, Modifier.size(14.dp), tint = BrandIndigo)
                 }

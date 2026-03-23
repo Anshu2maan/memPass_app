@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -65,25 +67,57 @@ fun AddPasswordScreen(navController: NavHostController, viewModel: PasswordViewM
         CryptoUtils.wipe(chars)
         s
     }
+    var isFavorite by remember(existing) { mutableStateOf(existing?.isFavorite ?: false) }
     
     var showDeterministicDialog by remember { mutableStateOf(false) }
     var showRandomDialog by remember { mutableStateOf(false) }
     var isPassVisible by remember { mutableStateOf(false) }
+
+    val isTotpValid = remember(totpSecret) {
+        if (totpSecret.isEmpty()) true 
+        else {
+            val chars = totpSecret.toCharArray()
+            val valid = TotpHelper.isValidSecret(chars)
+            CryptoUtils.wipe(chars)
+            valid
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { 
             TopAppBar(
                 title = { Text(stringResource(if(editId == 0) R.string.new_password else R.string.edit_account), fontWeight = FontWeight.Bold) }, 
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }, 
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+                actions = {
+                    IconButton(onClick = { isFavorite = !isFavorite }) {
+                        Icon(
+                            if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Toggle Favorite",
+                            tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             ) 
         }
     ) { padding ->
-        Column(Modifier.padding(padding).padding(24.dp).verticalScroll(rememberScrollState())) {
-            PremiumTextField(value = service, onValueChange = { service = it }, label = stringResource(R.string.service_label), icon = Icons.Default.Language)
+        Column(Modifier.padding(padding).padding(horizontal = 24.dp).verticalScroll(rememberScrollState())) {
             Spacer(Modifier.height(16.dp))
-            PremiumTextField(value = user, onValueChange = { user = it }, label = stringResource(R.string.username_email), icon = Icons.Default.Person)
+            PremiumTextField(
+                value = service, 
+                onValueChange = { service = it }, 
+                label = stringResource(R.string.service_label), 
+                icon = Icons.Default.Language
+            )
+            Spacer(Modifier.height(16.dp))
+            PremiumTextField(
+                value = user, 
+                onValueChange = { user = it }, 
+                label = stringResource(R.string.username_email), 
+                icon = Icons.Default.Person,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+            )
             Spacer(Modifier.height(16.dp))
             
             Column {
@@ -162,12 +196,8 @@ fun AddPasswordScreen(navController: NavHostController, viewModel: PasswordViewM
                 label = stringResource(R.string.totp_secret_label), 
                 icon = Icons.Default.VpnKey
             )
-            if (totpSecret.isNotEmpty()) {
-                val secretChars = totpSecret.toCharArray()
-                if (!TotpHelper.isValidSecret(secretChars)) {
-                    Text(stringResource(R.string.invalid_totp_secret), color = BrandRose, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp))
-                }
-                CryptoUtils.wipe(secretChars)
+            if (totpSecret.isNotEmpty() && !isTotpValid) {
+                Text(stringResource(R.string.invalid_totp_secret), color = BrandRose, fontSize = 11.sp, modifier = Modifier.padding(start = 16.dp, top = 4.dp))
             }
             
             Spacer(Modifier.height(16.dp))
@@ -177,22 +207,30 @@ fun AddPasswordScreen(navController: NavHostController, viewModel: PasswordViewM
             Button(
                 onClick = { 
                     if(service.isNotEmpty()) { 
+                        if (!isTotpValid) {
+                            Toast.makeText(context, context.getString(R.string.invalid_totp_secret), Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        
                         val userChars = user.toCharArray()
                         val passChars = pass.toCharArray()
                         val notesChars = notes.toCharArray()
                         val totpChars = if(totpSecret.isEmpty()) null else totpSecret.toCharArray()
 
-                        viewModel.savePassword(service, userChars, passChars, notesChars, totpChars, id = editId)
+                        viewModel.savePassword(service, userChars, passChars, notesChars, totpChars, isFavorite = isFavorite, id = editId)
                         
                         CryptoUtils.wipe(userChars, passChars, notesChars, totpChars)
 
                         navController.popBackStack() 
-                    } 
+                    } else {
+                        Toast.makeText(context, context.getString(R.string.service_empty_error), Toast.LENGTH_SHORT).show()
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo)
             ) { Text(stringResource(if(editId == 0) R.string.save_securely else R.string.update_details), fontWeight = FontWeight.Bold) }
+            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -268,9 +306,10 @@ fun DeterministicPasswordDialog(
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = masterPinInput,
-                    onValueChange = { if(it.length <= 6) masterPinInput = it },
+                    onValueChange = { if(it.all { char -> char.isDigit() } && it.length <= 6) masterPinInput = it },
                     label = { Text(stringResource(R.string.master_pin_label)) },
                     visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
