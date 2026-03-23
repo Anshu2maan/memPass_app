@@ -76,14 +76,13 @@ class NoteViewModel @Inject constructor(
         selfDestructAt: Long? = null, 
         isLocked: Boolean = false,
         isFavorite: Boolean = false,
+        fontFamily: String = "Default",
+        fontSize: Float = 16.0f,
         id: Int = 0,
         onComplete: () -> Unit = {}
     ) {
         val key = getVaultKey() ?: return
         
-        // SECURITY FIX: Encrypt synchronously BEFORE the coroutine starts.
-        // This prevents a race condition where the UI wipes the source CharArrays 
-        // before the background thread can encrypt them.
         val encryptedContent = try {
             CryptoUtils.encrypt(content, key)
         } catch (e: Exception) {
@@ -105,11 +104,20 @@ class NoteViewModel @Inject constructor(
                 }
                 val cleanedTags = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }.joinToString(",")
                 val noteEntry = NoteEntry(
-                    id = id, remoteId = existingRemoteId ?: UUID.randomUUID().toString(),
-                    title = title.trim(), encryptedContent = encryptedContent,
-                    category = category, colorHex = colorHex, isChecklist = isChecklist,
-                    tags = cleanedTags, snippetFilePaths = snippetFilePaths.joinToString(PATH_SEPARATOR),
-                    selfDestructAt = selfDestructAt, isLocked = isLocked, isFavorite = isFavorite
+                    id = id, 
+                    remoteId = existingRemoteId ?: UUID.randomUUID().toString(),
+                    title = title.trim(), 
+                    encryptedContent = encryptedContent,
+                    category = category, 
+                    colorHex = colorHex, 
+                    isChecklist = isChecklist,
+                    tags = cleanedTags, 
+                    snippetFilePaths = snippetFilePaths.joinToString(PATH_SEPARATOR),
+                    selfDestructAt = selfDestructAt, 
+                    isLocked = isLocked, 
+                    isFavorite = isFavorite,
+                    fontFamily = fontFamily,
+                    fontSize = fontSize
                 )
                 repository.insertNote(noteEntry)
 

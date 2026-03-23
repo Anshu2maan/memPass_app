@@ -132,14 +132,38 @@ data class NoteEntry(
         if (javaClass != other?.javaClass) return false
         other as NoteEntry
         if (id != other.id) return false
+        if (remoteId != other.remoteId) return false
+        if (title != other.title) return false
         if (!encryptedContent.contentEquals(other.encryptedContent)) return false
+        if (category != other.category) return false
+        if (colorHex != other.colorHex) return false
+        if (isChecklist != other.isChecklist) return false
+        if (tags != other.tags) return false
+        if (snippetFilePaths != other.snippetFilePaths) return false
+        if (selfDestructAt != other.selfDestructAt) return false
+        if (isLocked != other.isLocked) return false
+        if (createdAt != other.createdAt) return false
+        if (fontFamily != other.fontFamily) return false
+        if (fontSize != other.fontSize) return false
         if (isFavorite != other.isFavorite) return false
         return true
     }
 
     override fun hashCode(): Int {
         var result = id
+        result = 31 * result + remoteId.hashCode()
+        result = 31 * result + title.hashCode()
         result = 31 * result + encryptedContent.contentHashCode()
+        result = 31 * result + category.hashCode()
+        result = 31 * result + colorHex.hashCode()
+        result = 31 * result + isChecklist.hashCode()
+        result = 31 * result + tags.hashCode()
+        result = 31 * result + snippetFilePaths.hashCode()
+        result = 31 * result + (selfDestructAt?.hashCode() ?: 0)
+        result = 31 * result + isLocked.hashCode()
+        result = 31 * result + createdAt.hashCode()
+        result = 31 * result + fontFamily.hashCode()
+        result = 31 * result + fontSize.hashCode()
         result = 31 * result + isFavorite.hashCode()
         return result
     }

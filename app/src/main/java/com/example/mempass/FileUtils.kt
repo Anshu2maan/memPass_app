@@ -39,19 +39,24 @@ class FileUtils @Inject constructor(@ApplicationContext private val context: Con
         }
     }
 
-    fun getThumbnail(filePath: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+    /**
+     * Now supports Decryption on the fly for thumbnails.
+     */
+    fun getThumbnail(filePath: String, reqWidth: Int, reqHeight: Int, vaultKey: SecretKeySpec? = null): Bitmap? {
         val cacheKey = "${filePath}_${reqWidth}_$reqHeight"
         thumbnailCache.get(cacheKey)?.let { return it }
 
-        val tempFile = File(filePath)
-        if (!tempFile.exists()) return null
+        val file = File(filePath)
+        if (!file.exists()) return null
 
         return try {
-            val bitmap = if (filePath.endsWith(".pdf")) {
-                // PDF thumbnail logic here if needed
-                null
+            val bitmap = if (vaultKey != null && filePath.endsWith(".enc")) {
+                // If encrypted, use our specific decrypting decoder
+                ImageUtils.decodeSampledBitmapFromEncryptedFile(file, vaultKey, reqWidth, reqHeight)
+            } else if (filePath.lowercase().endsWith(".pdf")) {
+                ImageUtils.renderPdfPageToBitmap(file, reqWidth, reqHeight, 0)
             } else {
-                ImageUtils.decodeSampledBitmap(tempFile.absolutePath, reqWidth, reqHeight)
+                ImageUtils.decodeSampledBitmap(file.absolutePath, reqWidth, reqHeight)
             }
 
             if (bitmap != null) {
@@ -61,8 +66,6 @@ class FileUtils @Inject constructor(@ApplicationContext private val context: Con
         } catch (e: Exception) {
             Log.e(TAG, "Thumbnail generation failed", e)
             null
-        } finally {
-            if (tempFile.exists() && filePath.contains("temp_")) tempFile.delete()
         }
     }
 
