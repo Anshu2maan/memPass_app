@@ -32,7 +32,7 @@ class VaultAuthManager @Inject constructor(
         val lockoutUntil = prefs.getLong(Constants.KEY_LOCKOUT_UNTIL, 0L)
         val currentTime = SystemClock.elapsedRealtime()
         if (currentTime < lockoutUntil) {
-            onTimeRemaining((lockoutUntil - currentTime) / 1000)
+            onTimeRemaining(lockoutUntil - currentTime)
             return true
         }
         return false

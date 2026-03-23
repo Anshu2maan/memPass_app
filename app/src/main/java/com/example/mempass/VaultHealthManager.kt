@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.example.mempass.common.Constants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -15,6 +16,13 @@ class VaultHealthManager @Inject constructor(
     @Named("SecurityPrefs") private val prefs: SharedPreferences,
     private val biometricHelper: BiometricHelper
 ) {
+
+    private fun hashCharArray(chars: CharArray): String {
+        val bytes = CryptoUtils.charToBytes(chars)
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        CryptoUtils.wipe(bytes)
+        return digest.joinToString("") { "%02x".format(it) }
+    }
 
     fun getVaultHealth(
         allPasswords: Flow<List<PasswordEntry>>,
@@ -28,32 +36,48 @@ class VaultHealthManager @Inject constructor(
         var passScore = 1.0f
         if (passwords.isNotEmpty()) {
             val decryptedPasses = passwords.map { decryptToChars(it.encryptedPassword) }
-            val weakCount = decryptedPasses.count { 
-                val result = PasswordGenerator.calculateStrength(it).first < Constants.WEAK_PASSWORD_THRESHOLD
+            val hashedPasses = decryptedPasses.map { 
+                val h = hashCharArray(it)
                 CryptoUtils.wipe(it)
+                h
+            }
+            
+            val weakCount = passwords.indices.count { i ->
+                val chars = decryptToChars(passwords[i].encryptedPassword)
+                val result = PasswordGenerator.calculateStrength(chars).first < Constants.WEAK_PASSWORD_THRESHOLD
+                CryptoUtils.wipe(chars)
                 result
             }
             
-            // Note: Unique check is hard with CharArray without converting to String. 
-            // For health check, we'll skip reuse detection or use a hash-based approach if needed.
-            // For now, let's focus on strength.
-            val uniquePasses = passwords.size // Placeholder
+            val reuseMap = hashedPasses.groupingBy { it }.eachCount()
+            val reusedCount = hashedPasses.count { reuseMap[it] ?: 0 > 1 }
             
             val sixMonths = 180L * 24 * 3600 * 1000
             val oldPassCount = passwords.count { it.createdAt < now - sixMonths }
             val mfaCount = passwords.count { it.encryptedTotpSecret != null }
             
             val strengthPart = (passwords.size - weakCount).toFloat() / passwords.size
+            val reusePart = (passwords.size - reusedCount).toFloat() / passwords.size
             val agePart = (passwords.size - oldPassCount).toFloat() / passwords.size
             val mfaPart = mfaCount.toFloat() / passwords.size
             
-            passScore = (strengthPart * 0.5f) + (agePart * 0.3f) + (mfaPart * 0.2f)
+            passScore = (strengthPart * 0.4f) + (reusePart * 0.2f) + (agePart * 0.2f) + (mfaPart * 0.2f)
             
-            factors.add(HealthFactor(
-                application.getString(R.string.passwords), passScore,
-                if(passScore > 0.8f) "Strong" else if(passScore > 0.5f) "Moderate" else "Weak",
-                if(weakCount > 0) "Fix $weakCount weak passwords." else "Password security is good."
-            ))
+            val status = when {
+                passScore > 0.85f -> "Excellent"
+                passScore > 0.7f -> "Strong"
+                passScore > 0.5f -> "Moderate"
+                else -> "Weak"
+            }
+
+            val advice = buildString {
+                if (weakCount > 0) append("Fix $weakCount weak passwords. ")
+                if (reusedCount > 0) append("Change $reusedCount reused passwords. ")
+                if (oldPassCount > 0) append("Update $oldPassCount old passwords. ")
+                if (isEmpty()) append("Password security is good.")
+            }
+            
+            factors.add(HealthFactor(application.getString(R.string.passwords), passScore, status, advice.trim()))
         } else {
             factors.add(HealthFactor(application.getString(R.string.passwords), 1.0f, "No Data", "Add passwords to analyze."))
         }
@@ -80,7 +104,7 @@ class VaultHealthManager @Inject constructor(
         // 3. Account Security (30%)
         val bioEnabled = biometricHelper.isBiometricEnabled()
         val lastBackup = prefs.getLong(Constants.KEY_LAST_BACKUP_TIME, 0L)
-        val backupRecent = now - lastBackup < Constants.BACKUP_REMINDER_DAYS * 24 * 3600 * 1000L
+        val backupRecent = lastBackup != 0L && (now - lastBackup < Constants.BACKUP_REMINDER_DAYS * 24 * 3600 * 1000L)
         
         val accScore = (if(bioEnabled) 0.5f else 0.0f) + (if(backupRecent) 0.5f else 0.0f)
         factors.add(HealthFactor(
@@ -110,14 +134,27 @@ class VaultHealthManager @Inject constructor(
             tips.add(SecurityTip("$failedAttempts failed attempts recorded since last login", TipType.WARNING))
         }
 
-        val weakCount = passwords.count {
-            val decrypted = decryptToChars(it.encryptedPassword)
-            val result = PasswordGenerator.calculateStrength(decrypted).first < Constants.WEAK_PASSWORD_THRESHOLD
-            CryptoUtils.wipe(decrypted)
+        val decryptedPasses = passwords.map { decryptToChars(it.encryptedPassword) }
+        val hashedPasses = decryptedPasses.map { 
+            val h = hashCharArray(it)
+            CryptoUtils.wipe(it)
+            h
+        }
+        val weakCount = passwords.indices.count { i ->
+            val chars = decryptToChars(passwords[i].encryptedPassword)
+            val result = PasswordGenerator.calculateStrength(chars).first < Constants.WEAK_PASSWORD_THRESHOLD
+            CryptoUtils.wipe(chars)
             result
         }
+        
+        val reuseMap = hashedPasses.groupingBy { it }.eachCount()
+        val reusedCount = hashedPasses.count { reuseMap[it] ?: 0 > 1 }
+
         if (weakCount > 0) {
             tips.add(SecurityTip(application.getString(R.string.weak_password_warning, weakCount), TipType.WARNING, "password_list"))
+        }
+        if (reusedCount > 0) {
+            tips.add(SecurityTip("You have $reusedCount reused passwords. Using unique passwords is safer.", TipType.WARNING, "password_list"))
         }
 
         val expiryWarningMs = Constants.EXPIRY_WARNING_DAYS * 24 * 3600 * 1000L
