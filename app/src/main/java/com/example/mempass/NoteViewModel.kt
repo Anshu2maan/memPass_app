@@ -162,11 +162,24 @@ class NoteViewModel @Inject constructor(
         return fileUtils.uriToFile(uri)
     }
     
-    suspend fun encryptAndSave(file: File, fileName: String): String {
+    suspend fun encryptAndSave(file: File, uri: Uri, fileName: String): String {
         val key = getVaultKey() ?: return ""
+        
+        // Auto-compression for images
+        val mimeType = getApplication<Application>().contentResolver.getType(uri)
+        val fileToEncrypt = if (mimeType?.startsWith("image/") == true) {
+            ImageUtils.compressImageToTarget(getApplication(), uri, 1024) ?: file
+        } else {
+            file
+        }
+
         val destination = File(getApplication<Application>().filesDir, "$fileName.enc")
-        FileEncryptor.encryptFile(file, destination, key)
+        FileEncryptor.encryptFile(fileToEncrypt, destination, key)
+        
+        // Cleanup temp files
         if (file.exists()) file.delete()
+        if (fileToEncrypt != file && fileToEncrypt.exists()) fileToEncrypt.delete()
+
         return destination.absolutePath
     }
 }

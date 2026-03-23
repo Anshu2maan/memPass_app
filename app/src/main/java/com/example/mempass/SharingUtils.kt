@@ -94,7 +94,6 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
 
     /**
      * Exports an encrypted file by decrypting it on the fly using the provided key.
-     * Best for individual vault items like documents.
      */
     fun exportDecryptedFile(internalPath: String, key: SecretKeySpec, displayName: String) {
         exportToMediaStore(internalPath, displayName) { input, output ->
@@ -104,7 +103,6 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
 
     /**
      * Exports a file as-is without any modification.
-     * Best for already encrypted files like backups.
      */
     fun exportRawFile(internalPath: String, displayName: String) {
         exportToMediaStore(internalPath, displayName) { input, output ->
@@ -112,23 +110,17 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
-    /**
-     * Keeping this for backward compatibility if needed, but preferred to use specific methods.
-     */
-    @Deprecated("Use exportDecryptedFile or exportRawFile for better clarity", ReplaceWith("exportDecryptedFile(internalPath, key, displayName)"))
-    fun exportFile(internalPath: String, key: SecretKeySpec, displayName: String) {
-        exportDecryptedFile(internalPath, key, displayName)
-    }
-
     fun shareFile(internalPath: String, key: SecretKeySpec, displayName: String) {
-        var tempFile: File? = null
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
             val shareDir = File(context.cacheDir, "shared_files")
             if (!shareDir.exists()) shareDir.mkdirs()
+            
+            // Clear previous shared files to save space
+            shareDir.listFiles()?.forEach { it.delete() }
 
-            tempFile = File(shareDir, cleanName)
+            val tempFile = File(shareDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)
             
             sharePlainFile(tempFile.absolutePath, cleanName)
@@ -141,14 +133,16 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
     fun sharePlainFile(plainPath: String, displayName: String) {
         try {
             val file = validateFilePath(plainPath)
-            val contentUri = FileProvider.getUriForFile(context, "com.example.mempass.fileprovider", file)
-            val intent = Intent(Intent.ACTION_SEND).apply {
+            val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = getMimeType(displayName)
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(Intent.createChooser(intent, "Share via").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            
+            val chooser = Intent.createChooser(shareIntent, "Share Document")
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooser)
         } catch (e: Exception) {
             Log.e(TAG, "Share failed", e)
             Toast.makeText(context, "Share failed", Toast.LENGTH_SHORT).show()
@@ -156,7 +150,6 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
     }
 
     fun viewFile(internalPath: String, key: SecretKeySpec, displayName: String) {
-        var tempFile: File? = null
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
@@ -165,16 +158,16 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
             
             viewDir.listFiles()?.forEach { it.delete() }
             
-            tempFile = File(viewDir, cleanName)
+            val tempFile = File(viewDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)
             
-            val contentUri = FileProvider.getUriForFile(context, "com.example.mempass.fileprovider", tempFile)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
+            val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(contentUri, getMimeType(cleanName))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            context.startActivity(viewIntent)
         } catch (e: Exception) {
             Log.e(TAG, "View failed", e)
             Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show()

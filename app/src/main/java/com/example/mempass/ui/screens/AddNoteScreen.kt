@@ -87,6 +87,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
     var showFontSheet by remember { mutableStateOf(false) }
     var showTimerDialog by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    var isAttaching by remember { mutableStateOf(false) }
     var showExitConfirmation by remember { mutableStateOf(false) }
 
     val bgColor = remember(colorHex) {
@@ -124,13 +125,20 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
     BackHandler(onBack = onExit)
 
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-        scope.launch {
-            uris.forEach { uri ->
-                val file = viewModel.uriToFile(uri)
-                val path = viewModel.encryptAndSave(file, "vault_asset_${UUID.randomUUID()}")
-                if (path.isNotEmpty()) {
-                    attachedFiles = attachedFiles + path
-                    newlyAddedFiles.add(path)
+        if (uris.isNotEmpty()) {
+            isAttaching = true
+            scope.launch {
+                try {
+                    uris.forEach { uri ->
+                        val file = viewModel.uriToFile(uri)
+                        val path = viewModel.encryptAndSave(file, uri, "vault_asset_${UUID.randomUUID()}")
+                        if (path.isNotEmpty()) {
+                            attachedFiles = attachedFiles + path
+                            newlyAddedFiles.add(path)
+                        }
+                    }
+                } finally {
+                    isAttaching = false
                 }
             }
         }
@@ -182,7 +190,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                                     navController.popBackStack()
                                 }
                             },
-                            enabled = headline.isNotBlank() || content.isNotBlank(),
+                            enabled = (headline.isNotBlank() || content.isNotBlank()) && !isAttaching,
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo),
                             modifier = Modifier.padding(end = 12.dp)
@@ -227,7 +235,14 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                             ) 
                         }
                         item { ToolIcon(Icons.Default.Timer, "Destruct", active = selfDestructAt != null, onClick = { showTimerDialog = true }) }
-                        item { ToolIcon(Icons.Default.AddPhotoAlternate, "Attach", onClick = { fileLauncher.launch("image/*") }) }
+                        item { 
+                            Box(contentAlignment = Alignment.Center) {
+                                ToolIcon(Icons.Default.AttachFile, "Attach", onClick = { fileLauncher.launch("*/*") })
+                                if (isAttaching) {
+                                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp, color = BrandIndigo)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -438,6 +453,18 @@ fun TypographySheet(currentFont: String, currentSize: Float, onFontSelect: (Stri
 
 @Composable
 fun AssetCard(path: String, viewModel: NoteViewModel, onRemove: () -> Unit) {
+    val extension = path.substringAfterLast(".", "").lowercase()
+    val isEncrypted = path.endsWith(".enc")
+    
+    // Improved Icon mapping for better visual feedback when thumbnail fails
+    val fileIcon = when {
+        path.contains("pdf", ignoreCase = true) -> Icons.AutoMirrored.Filled.InsertDriveFile
+        path.contains("image", ignoreCase = true) || extension in listOf("jpg", "jpeg", "png", "webp") -> Icons.Default.Image
+        extension in listOf("doc", "docx") -> Icons.Default.Description
+        extension in listOf("xls", "xlsx") -> Icons.Default.TableChart
+        else -> Icons.Default.Description
+    }
+
     Box(
         Modifier
             .size(140.dp)
@@ -448,8 +475,16 @@ fun AssetCard(path: String, viewModel: NoteViewModel, onRemove: () -> Unit) {
         val thumbnailState = produceState<android.graphics.Bitmap?>(null, path) {
             value = viewModel.getVaultKey()?.let { viewModel.fileUtils.getThumbnail(path, 400, 400, it) }
         }
-        thumbnailState.value?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-            ?: Icon(Icons.Default.Description, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+        
+        thumbnailState.value?.let { 
+            Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) 
+        } ?: Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(fileIcon, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+            if (isEncrypted) {
+                Spacer(Modifier.height(4.dp))
+                Icon(Icons.Default.Lock, null, modifier = Modifier.size(12.dp), tint = BrandIndigo.copy(alpha = 0.6f))
+            }
+        }
         
         IconButton(
             onClick = onRemove,

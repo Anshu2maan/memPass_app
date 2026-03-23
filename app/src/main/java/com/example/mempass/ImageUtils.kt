@@ -98,6 +98,19 @@ object ImageUtils {
         }
     }
 
+    /**
+     * Helper to render PDF from bytes (useful for encrypted PDFs)
+     */
+    fun renderPdfBytesToBitmap(context: Context, bytes: ByteArray, reqWidth: Int, reqHeight: Int): Bitmap? {
+        val tempFile = File(context.cacheDir, "pdf_thumb_temp.pdf")
+        return try {
+            tempFile.writeBytes(bytes)
+            renderPdfPageToBitmap(tempFile, reqWidth, reqHeight, 0)
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
+    }
+
     fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, options)
@@ -106,13 +119,27 @@ object ImageUtils {
         return BitmapFactory.decodeFile(path, options)
     }
 
-    fun decodeSampledBitmapFromEncryptedFile(file: File, key: SecretKeySpec, reqWidth: Int, reqHeight: Int): Bitmap? {
+    fun decodeSampledBitmapFromEncryptedFile(file: File, key: SecretKeySpec, reqWidth: Int, reqHeight: Int, context: Context? = null): Bitmap? {
         return try {
             val decryptedBytes = FileEncryptor.decryptFile(file, key)
+            
+            // First check if it's a PDF by magic bytes (optional but safer) or just try
+            // Here we check if context is provided to try PDF rendering
+            if (context != null) {
+                // Simplistic PDF check: %PDF-
+                if (decryptedBytes.size > 4 && decryptedBytes[0] == 0x25.toByte() && decryptedBytes[1] == 0x50.toByte() && 
+                    decryptedBytes[2] == 0x44.toByte() && decryptedBytes[3] == 0x46.toByte()) {
+                    return renderPdfBytesToBitmap(context, decryptedBytes, reqWidth, reqHeight)
+                }
+            }
+
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true
             }
             BitmapFactory.decodeByteArray(decryptedBytes, 0, decryptedBytes.size, options)
+            
+            if (options.outWidth <= 0 || options.outHeight <= 0) return null
+
             options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
             options.inJustDecodeBounds = false
             BitmapFactory.decodeByteArray(decryptedBytes, 0, decryptedBytes.size, options)
