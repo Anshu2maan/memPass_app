@@ -22,7 +22,15 @@ fun NavGraphBuilder.authGraph(navController: NavHostController, vaultViewModel: 
 
 fun NavGraphBuilder.mainGraph(navController: NavHostController, vaultViewModel: VaultViewModel) {
     composable("main") { MainDashboard(navController, vaultViewModel) }
-    composable("settings") { SettingsScreen(navController, vaultViewModel) }
+    composable("settings") { 
+        SettingsScreen(
+            navController = navController, 
+            viewModel = vaultViewModel,
+            onNavigateToLogs = { navController.navigate("intruder_logs") },
+            onNavigateToRecovery = { /* Navigate to recovery if exists */ },
+            onNavigateToTheme = { /* Navigate to theme if exists */ }
+        ) 
+    }
     composable("intruder_logs") { IntruderLogScreen(navController) }
 }
 

@@ -7,7 +7,6 @@ import android.net.Uri
 import android.util.Log
 import com.example.mempass.common.Constants
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.api.services.drive.Drive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -28,22 +27,32 @@ class VaultBackupHelper @Inject constructor(
     private val driveHelper: DriveHelper,
     private val sharingUtils: SharingUtils,
     private val backupManager: BackupManager,
+    private val authManager: VaultAuthManager,
     @Named("SecurityPrefs") private val prefs: SharedPreferences,
     @Named("HistoryPrefs") private val historyPrefs: SharedPreferences
 ) {
     private val TAG = "VaultBackupHelper"
     private val METADATA_NAME = "vault_backup.mempass"
 
+    /**
+     * Derives a consistent password for Cloud Sync using the Recovery Key.
+     * This ensures that sync remains functional even if the user changes their PIN.
+     */
+    private fun getSyncPassword(): CharArray {
+        return authManager.getCurrentRecoveryKey() 
+            ?: throw IllegalStateException("Recovery Key not available. Please unlock vault first.")
+    }
+
     suspend fun performDriveSync(
         context: Context,
         account: GoogleSignInAccount,
         key: SecretKeySpec,
-        backupPassword: CharArray,
         forceOverwrite: Boolean = false,
         onComplete: (Boolean, String) -> Unit
     ) = withContext(Dispatchers.IO) {
         try {
             val driveService = driveHelper.getDriveService(account)
+            val syncPassword = getSyncPassword()
             
             val localPasswords = repository.allPasswords.first()
             val localDocs = repository.allDocuments.first()
@@ -51,7 +60,7 @@ class VaultBackupHelper @Inject constructor(
 
             val tempFile = File(context.cacheDir, METADATA_NAME)
             val outputStream = FileOutputStream(tempFile)
-            backupManager.exportToBackup(localPasswords, localDocs, localNotes, backupPassword, outputStream)
+            backupManager.exportToBackup(localPasswords, localDocs, localNotes, syncPassword, outputStream)
             outputStream.close()
 
             driveHelper.uploadFile(driveService, tempFile, METADATA_NAME, "appDataFolder")
@@ -74,12 +83,12 @@ class VaultBackupHelper @Inject constructor(
         context: Context,
         account: GoogleSignInAccount,
         key: SecretKeySpec,
-        backupPassword: CharArray,
         overwrite: Boolean = false,
         onComplete: (Boolean, String) -> Unit
     ) = withContext(Dispatchers.IO) {
         try {
             val driveService = driveHelper.getDriveService(account)
+            val syncPassword = getSyncPassword()
 
             val fileList = driveService.files().list()
                 .setSpaces("appDataFolder")
@@ -87,7 +96,7 @@ class VaultBackupHelper @Inject constructor(
                 .execute()
             
             if (fileList.files.isEmpty()) {
-                withContext(Dispatchers.Main) { onComplete(false, "No backup found") }
+                withContext(Dispatchers.Main) { onComplete(false, "No backup found on Drive") }
                 return@withContext
             }
 
@@ -95,7 +104,7 @@ class VaultBackupHelper @Inject constructor(
             driveHelper.downloadFile(driveService, fileList.files[0].id, tempFile)
             
             val inputStream = FileInputStream(tempFile)
-            val (passwords, documents, notes) = backupManager.importFromBackup(inputStream, backupPassword)
+            val (passwords, documents, notes) = backupManager.importFromBackup(inputStream, syncPassword)
             inputStream.close()
             tempFile.delete()
 
@@ -134,10 +143,12 @@ class VaultBackupHelper @Inject constructor(
             historyPrefs.edit().putStringSet("export_logs", logs).apply()
             
             withContext(Dispatchers.Main) {
-                sharingUtils.exportFile(tempFile.absolutePath, key, fileName)
-                onComplete(true, "Backup saved")
+                // Best Engineering Practice: Raw copy for already encrypted manual backups
+                sharingUtils.exportRawFile(tempFile.absolutePath, fileName)
+                onComplete(true, "Backup saved to Downloads/MemPass")
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Manual export failed", e)
             withContext(Dispatchers.Main) { onComplete(false, "Export Failed") }
         }
     }
@@ -157,6 +168,7 @@ class VaultBackupHelper @Inject constructor(
                 onComplete(true, passwords.size, documents.size, notes.size)
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Manual import failed", e)
             withContext(Dispatchers.Main) { onError("Import Failed: ${e.localizedMessage}") }
         }
     }

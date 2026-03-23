@@ -191,6 +191,10 @@
     <string name="never_backed_up">Never backed up</string>
     <string name="last_backup_format">Last: %1$s</string>
     <string name="sync_now">Sync Now</string>
+    <string name="theme">Theme</string>
+    <string name="history">History</string>
+    <string name="view_logs">View Logs</string>
+    <string name="export_vault">Export Vault</string>
 
     <!-- Document Screens -->
     <string name="search_docs">Search docs&#8230;</string>

@@ -11,7 +11,6 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Arrays
 import java.util.concurrent.TimeUnit
 
 @HiltWorker
@@ -47,33 +46,13 @@ class DriveBackupWorker @AssistedInject constructor(
             if (account != null) {
                 Log.d(TAG, "Starting incremental auto-backup for account: ${account.email}")
                 
-                // SECURITY FIX (#7): Use the stored Recovery Key instead of a weak PIN hash.
-                // The recovery key is stored as a wrapped Keystore blob for extra protection.
-                val wrappedRKey = prefs.getString(Constants.KEY_RECOVERY_KEY_STORED, null)
-                if (wrappedRKey == null) {
-                    Log.e(TAG, "Stored recovery key missing, cannot derive sync password")
-                    return@withContext Result.failure()
-                }
-                
-                val rKeyBytes = KeystoreHelper.unwrapToBytes(wrappedRKey)
-                if (rKeyBytes == null) {
-                    Log.e(TAG, "Failed to unwrap recovery key from Keystore")
-                    return@withContext Result.failure()
-                }
-
-                val syncPassChars = CryptoUtils.bytesToChars(rKeyBytes)
-                
                 var successResult = false
-                try {
-                    backupHelper.performDriveSync(
-                        applicationContext, account, key, syncPassChars
-                    ) { success, _ ->
-                        successResult = success
-                    }
-                } finally {
-                    // Critical: Wipe sensitive data immediately after use
-                    Arrays.fill(rKeyBytes, 0.toByte())
-                    Arrays.fill(syncPassChars, ' ')
+                // Best Engineering Practice: DriveBackupWorker now delegates password handling
+                // to VaultBackupHelper, which uses the internal Sync Key.
+                backupHelper.performDriveSync(
+                    applicationContext, account, key
+                ) { success, _ ->
+                    successResult = success
                 }
                 
                 if (successResult) {

@@ -175,6 +175,9 @@ class VaultViewModel @Inject constructor(
             _isBackupProcessing.value = true
             try {
                 block()
+            } catch (e: Exception) {
+                Log.e(TAG, "Backup operation failed", e)
+                emitCryptoError(e.localizedMessage ?: "Operation failed")
             } finally {
                 _isBackupProcessing.value = false
             }
@@ -218,17 +221,21 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    fun performDriveSync(context: Context, account: GoogleSignInAccount, backupPassword: CharArray, forceOverwrite: Boolean = false, onComplete: (Boolean, String) -> Unit) {
+    /**
+     * Best Engineering Practice: Drive Sync now uses an internal stable Sync Key derived from 
+     * the Recovery Key. The UI no longer needs to provide a password, making it seamless.
+     */
+    fun performDriveSync(context: Context, account: GoogleSignInAccount, forceOverwrite: Boolean = false, onComplete: (Boolean, String) -> Unit) {
         val key = getVaultKey() ?: return
         runWithBackupLoading {
-            backupHelper.performDriveSync(context, account, key, backupPassword, forceOverwrite, onComplete)
+            backupHelper.performDriveSync(context, account, key, forceOverwrite, onComplete)
         }
     }
 
-    fun restoreFromDrive(context: Context, account: GoogleSignInAccount, backupPassword: CharArray, overwrite: Boolean = false, onComplete: (Boolean, String) -> Unit) {
+    fun restoreFromDrive(context: Context, account: GoogleSignInAccount, overwrite: Boolean = false, onComplete: (Boolean, String) -> Unit) {
         val key = getVaultKey() ?: return
         runWithBackupLoading {
-            backupHelper.restoreFromDrive(context, account, key, backupPassword, overwrite, onComplete)
+            backupHelper.restoreFromDrive(context, account, key, overwrite, onComplete)
         }
     }
 

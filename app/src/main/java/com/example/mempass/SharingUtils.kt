@@ -13,6 +13,8 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,10 +51,9 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
     }
 
     /**
-     * Security Recommendation: Decrypts directly to the destination stream 
-     * to avoid leaving unencrypted data in the cache directory.
+     * Common logic to export any file to the Downloads/MemPass directory.
      */
-    fun exportFile(internalPath: String, key: SecretKeySpec, displayName: String) {
+    private fun exportToMediaStore(internalPath: String, displayName: String, processStream: (InputStream, OutputStream) -> Unit) {
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
@@ -67,7 +68,7 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
                 uri?.let {
                     context.contentResolver.openOutputStream(it)?.use { output ->
                         sourceFile.inputStream().use { input ->
-                            FileEncryptor.decryptStreamToStream(input, output, key)
+                            processStream(input, output)
                         }
                     }
                     Toast.makeText(context, "Exported to Downloads/MemPass", Toast.LENGTH_SHORT).show()
@@ -80,7 +81,7 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
                 val outputFile = File(memPassDir, cleanName)
                 sourceFile.inputStream().use { input ->
                     outputFile.outputStream().use { output ->
-                        FileEncryptor.decryptStreamToStream(input, output, key)
+                        processStream(input, output)
                     }
                 }
                 Toast.makeText(context, "Exported to Downloads/MemPass", Toast.LENGTH_SHORT).show()
@@ -89,6 +90,34 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
             Log.e(TAG, "Export failed for $displayName", e)
             Toast.makeText(context, "Export failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /**
+     * Exports an encrypted file by decrypting it on the fly using the provided key.
+     * Best for individual vault items like documents.
+     */
+    fun exportDecryptedFile(internalPath: String, key: SecretKeySpec, displayName: String) {
+        exportToMediaStore(internalPath, displayName) { input, output ->
+            FileEncryptor.decryptStreamToStream(input, output, key)
+        }
+    }
+
+    /**
+     * Exports a file as-is without any modification.
+     * Best for already encrypted files like backups.
+     */
+    fun exportRawFile(internalPath: String, displayName: String) {
+        exportToMediaStore(internalPath, displayName) { input, output ->
+            input.copyTo(output)
+        }
+    }
+
+    /**
+     * Keeping this for backward compatibility if needed, but preferred to use specific methods.
+     */
+    @Deprecated("Use exportDecryptedFile or exportRawFile for better clarity", ReplaceWith("exportDecryptedFile(internalPath, key, displayName)"))
+    fun exportFile(internalPath: String, key: SecretKeySpec, displayName: String) {
+        exportDecryptedFile(internalPath, key, displayName)
     }
 
     fun shareFile(internalPath: String, key: SecretKeySpec, displayName: String) {
