@@ -78,7 +78,8 @@ data class DocumentEntry(
     val filePaths: String,
     val thumbnailPath: String? = null,
     val expiryDate: Long? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val isFavorite: Boolean = false
 ) : VaultEntity {
     override fun withId(id: Int) = copy(id = id)
 
@@ -89,6 +90,7 @@ data class DocumentEntry(
         if (id != other.id) return false
         if (!encryptedFields.contentEquals(other.encryptedFields)) return false
         if (!encryptedNotes.contentEquals(other.encryptedNotes)) return false
+        if (isFavorite != other.isFavorite) return false
         return true
     }
 
@@ -96,6 +98,7 @@ data class DocumentEntry(
         var result = id
         result = 31 * result + encryptedFields.contentHashCode()
         result = 31 * result + encryptedNotes.contentHashCode()
+        result = 31 * result + isFavorite.hashCode()
         return result
     }
 }

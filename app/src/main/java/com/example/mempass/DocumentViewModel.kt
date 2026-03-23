@@ -64,21 +64,29 @@ class DocumentViewModel @Inject constructor(
         }
     }
 
-    fun saveDocument(title: String, type: String, fieldsJson: CharArray, notes: CharArray, filePaths: List<String>, expiryDate: Long? = null, id: Int = 0, onComplete: () -> Unit = {}) {
-        val key = getVaultKey() ?: return
+    fun saveDocument(title: String, type: String, fieldsJson: CharArray, notes: CharArray, filePaths: List<String>, expiryDate: Long? = null, isFavorite: Boolean = false, id: Int = 0, onComplete: () -> Unit = {}) {
+        val key = getVaultKey() ?: run {
+            onComplete() // Safety: Stop loading state if key missing
+            return
+        }
+        
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Using NonCancellable to ensure the save process completes even if the ViewModel is cleared
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                     var thumbnailPath: String? = null
+                    val allDocs = repository.allDocuments.first()
+                    
                     if (id != 0) {
-                        val oldDoc = repository.allDocuments.first().find { it.id == id }
+                        val oldDoc = allDocs.find { it.id == id }
                         oldDoc?.let { old ->
                             val oldPaths = splitPaths(old.filePaths).toSet()
                             val newPaths = filePaths.toSet()
+                            
+                            // Delete removed files
                             (oldPaths - newPaths).forEach { fileUtils.deleteFileIfExists(it) }
+                            
                             thumbnailPath = old.thumbnailPath
-                            if (oldPaths != newPaths) {
+                            if (filePaths.firstOrNull() != oldPaths.firstOrNull()) {
                                 fileUtils.deleteFileIfExists(old.thumbnailPath ?: "")
                                 thumbnailPath = null
                             }
@@ -89,7 +97,7 @@ class DocumentViewModel @Inject constructor(
                         thumbnailPath = try {
                             generateAndSaveThumbnail(filePaths.first())
                         } catch (e: Exception) {
-                            Log.e("DocumentViewModel", "Failed to generate thumbnail during save", e)
+                            Log.e("DocumentViewModel", "Failed to generate thumbnail", e)
                             null
                         }
                     }
@@ -100,7 +108,8 @@ class DocumentViewModel @Inject constructor(
                         encryptedNotes = CryptoUtils.encrypt(notes, key),
                         filePaths = filePaths.joinToString(PATH_SEPARATOR),
                         thumbnailPath = thumbnailPath,
-                        expiryDate = expiryDate
+                        expiryDate = expiryDate,
+                        isFavorite = isFavorite
                     )
                     
                     repository.insertDocument(doc)
@@ -109,21 +118,21 @@ class DocumentViewModel @Inject constructor(
                         onComplete()
                     }
                 }
-            } catch (e: CryptographyException) {
-                Log.e("DocumentViewModel", "Failed to save document due to crypto error", e)
-                emitCryptoError("Failed to save document: ${e.message}")
-                withContext(Dispatchers.Main) { onComplete() }
             } catch (e: Exception) {
                 Log.e("DocumentViewModel", "Critical error saving document", e)
-                withContext(Dispatchers.Main) {
-                    onComplete()
-                }
+                withContext(Dispatchers.Main) { onComplete() }
             }
         }
     }
 
+    fun toggleFavorite(entry: DocumentEntry) {
+        viewModelScope.launch { repository.insertDocument(entry.copy(isFavorite = !entry.isFavorite)) }
+    }
+
     fun deleteDocument(entry: DocumentEntry) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            splitPaths(entry.filePaths).forEach { fileUtils.deleteFileIfExists(it) }
+            fileUtils.deleteFileIfExists(entry.thumbnailPath ?: "")
             repository.deleteDocument(entry)
         }
     }
@@ -135,6 +144,12 @@ class DocumentViewModel @Inject constructor(
         FileEncryptor.encryptFile(file, destination, key)
         if (file.exists()) file.delete()
         return destination.absolutePath
+    }
+
+    fun deleteOrphanedFile(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            fileUtils.deleteFileIfExists(path)
+        }
     }
 
     fun shareDocument(filePath: String, displayName: String, quality: QualityOption) {
@@ -152,7 +167,7 @@ class DocumentViewModel @Inject constructor(
                 
                 val suffix = if (originalExtension.isNotEmpty()) ".$originalExtension" else ""
                 
-                val tempDecrypted = File(context.cacheDir, "temp_decrypted_${System.currentTimeMillis()}_$displayName$suffix")
+                val tempDecrypted = File(context.cacheDir, "temp_share_${System.currentTimeMillis()}_$displayName$suffix")
                 try {
                     FileEncryptor.decryptFileToFile(originalEncryptedFile, tempDecrypted, key)
 
@@ -183,6 +198,12 @@ class DocumentViewModel @Inject constructor(
                     }
 
                     sharingUtils.shareFile(finalFileToShare.absolutePath, key, sharingDisplayName)
+                    
+                    viewModelScope.launch {
+                        kotlinx.coroutines.delay(60000)
+                        if (tempDecrypted.exists()) tempDecrypted.delete()
+                        if (finalFileToShare != tempDecrypted && finalFileToShare.exists()) finalFileToShare.delete()
+                    }
                     
                 } catch (e: Exception) {
                     Log.e("DocumentViewModel", "Share failed", e)

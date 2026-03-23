@@ -1,6 +1,7 @@
 package com.example.mempass.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -10,8 +11,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -30,7 +34,6 @@ import com.example.mempass.DocumentEntry
 import com.example.mempass.DocumentViewModel
 import com.example.mempass.R
 import com.example.mempass.ui.components.QualityOption
-import com.example.mempass.ui.components.QualityPickerDialog
 import com.example.mempass.ui.theme.BrandRose
 import kotlinx.coroutines.launch
 import java.io.File
@@ -69,30 +72,41 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
         CryptoUtils.wipe(chars)
         s
     }
+    var isFavorite by remember(existingDoc) { mutableStateOf(existingDoc?.isFavorite ?: false) }
     
     var filePaths by remember(existingDoc) { 
         mutableStateOf(DocumentViewModel.splitPaths(existingDoc?.filePaths))
     }
+    val newlyAddedFiles = remember { mutableStateListOf<String>() }
+    
     var expiryDate by remember(existingDoc) { mutableStateOf(existingDoc?.expiryDate) }
     var isSaving by remember { mutableStateOf(false) }
     var isAttaching by remember { mutableStateOf(false) }
 
-    // Strings for Toasts and other non-composable contexts
-    val filesFailedToEncryptMsg = stringResource(R.string.files_failed_to_encrypt)
-    val documentDefaultName = stringResource(R.string.document_default_name)
+    var showExitConfirmation by remember { mutableStateOf(false) }
 
-    // States for individual file sharing
-    var showIndividualQualityDialog by remember { mutableStateOf(false) }
-    var sharingFilePath by remember { mutableStateOf<String?>(null) }
-    var sharingFileName by remember { mutableStateOf<String?>(null) }
+    val hasChanges = remember(title, type, notes, filePaths, expiryDate, isFavorite) {
+        val initialNotesChars = if(existingDoc != null) viewModel.decryptToChars(existingDoc.encryptedNotes) else CharArray(0)
+        val initialNotes = String(initialNotesChars)
+        CryptoUtils.wipe(initialNotesChars)
+        
+        title != (existingDoc?.title ?: "") ||
+        type != (existingDoc?.documentType ?: context.getString(R.string.sub_other)) ||
+        notes != initialNotes ||
+        filePaths != DocumentViewModel.splitPaths(existingDoc?.filePaths) ||
+        expiryDate != existingDoc?.expiryDate ||
+        isFavorite != (existingDoc?.isFavorite ?: false)
+    }
 
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showCategorySheet by remember { mutableStateOf(false) }
-    var selectedMainCat by remember { mutableStateOf<DocCategory?>(null) }
+    val onExit: () -> Unit = {
+        if (hasChanges) {
+            showExitConfirmation = true
+        } else {
+            navController.popBackStack()
+        }
+    }
 
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = expiryDate ?: System.currentTimeMillis()
-    )
+    BackHandler(onBack = onExit)
 
     val pickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (uris.isNotEmpty()) {
@@ -102,19 +116,27 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                 uris.forEach { uri ->
                     val path = viewModel.saveUriToInternalEncrypted(uri)
                     if (path != null) {
-                        filePaths = filePaths + path
+                        if (!filePaths.contains(path)) {
+                            filePaths = filePaths + path
+                            newlyAddedFiles.add(path)
+                        }
                         successCount++
                     }
                 }
                 isAttaching = false
                 if (successCount < uris.size) {
-                    Toast.makeText(context, filesFailedToEncryptMsg, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.files_failed_to_encrypt), Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showCategorySheet by remember { mutableStateOf(false) }
+    var selectedMainCat by remember { mutableStateOf<DocCategory?>(null) }
+
     if (showDatePicker) {
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = expiryDate ?: System.currentTimeMillis())
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
@@ -131,20 +153,38 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
         }
     }
 
+    if (showExitConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirmation = false },
+            title = { Text(stringResource(R.string.unsaved_changes_title)) },
+            text = { Text(stringResource(R.string.unsaved_changes_desc)) },
+            confirmButton = {
+                TextButton(onClick = { 
+                    newlyAddedFiles.forEach { viewModel.deleteOrphanedFile(it) }
+                    showExitConfirmation = false
+                    navController.popBackStack() 
+                }) {
+                    Text(stringResource(R.string.discard), color = BrandRose, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirmation = false }) { Text(stringResource(R.string.keep_editing)) }
+            }
+        )
+    }
+
     if (showCategorySheet) {
         ModalBottomSheet(
             onDismissRequest = { 
                 showCategorySheet = false
                 selectedMainCat = null
-            },
-            containerColor = MaterialTheme.colorScheme.surface
+            }
         ) {
             Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 40.dp).fillMaxWidth()) {
                 Text(
                     text = if (selectedMainCat == null) stringResource(R.string.select_category) else stringResource(R.string.select_sub_category),
                     fontWeight = FontWeight.Black,
-                    fontSize = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurface
+                    fontSize = 22.sp
                 )
                 Spacer(Modifier.height(20.dp))
 
@@ -159,7 +199,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(cat.icon, null, tint = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(16.dp))
-                                Text(stringResource(cat.nameRes), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text(stringResource(cat.nameRes), fontWeight = FontWeight.Bold)
                                 Spacer(Modifier.weight(1f))
                                 Icon(Icons.Default.ChevronRight, null, tint = Color.Gray)
                             }
@@ -168,7 +208,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = { selectedMainCat = null }) {
-                            Icon(Icons.Default.ArrowBack, null, Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
                             Text(stringResource(R.string.back_to_categories))
                         }
@@ -188,7 +228,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                             border = if (type == subName) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
                         ) {
                             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(subName, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                                Text(subName, fontWeight = FontWeight.Medium)
                                 Spacer(Modifier.weight(1f))
                                 if (type == subName) Icon(Icons.Default.Check, null, tint = MaterialTheme.colorScheme.primary)
                             }
@@ -199,41 +239,29 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
         }
     }
 
-    // Individual Quality Dialog for attachments
-    if (showIndividualQualityDialog && sharingFilePath != null) {
-        val originalSize = remember(sharingFilePath) { File(sharingFilePath!!).length() / 1024 }
-        QualityPickerDialog(
-            originalSizeKb = originalSize,
-            onDismiss = { showIndividualQualityDialog = false },
-            onQualitySelected = { quality ->
-                viewModel.shareDocument(sharingFilePath!!, sharingFileName ?: documentDefaultName, quality)
-                showIndividualQualityDialog = false
-            }
-        )
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (documentId == 0) stringResource(R.string.add_document) else stringResource(R.string.edit_document)) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onExit) {
                         Icon(Icons.Default.Close, null)
                     }
                 },
                 actions = {
-                    if (documentId != 0 && existingDoc != null) {
-                        IconButton(onClick = {
-                            viewModel.deleteDocument(existingDoc)
-                            navController.popBackStack()
-                        }) { Icon(Icons.Default.Delete, null, tint = BrandRose) }
+                    IconButton(onClick = { isFavorite = !isFavorite }) {
+                        Icon(
+                            if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = null,
+                            tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                     Button(
                         onClick = {
                             isSaving = true
                             val fieldsChars = "{}".toCharArray()
                             val notesChars = notes.toCharArray()
-                            viewModel.saveDocument(title, type, fieldsChars, notesChars, filePaths, expiryDate, documentId) {
+                            viewModel.saveDocument(title, type, fieldsChars, notesChars, filePaths, expiryDate, isFavorite, documentId) {
                                 isSaving = false
                                 CryptoUtils.wipe(fieldsChars, notesChars)
                                 navController.popBackStack()
@@ -242,13 +270,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                         enabled = title.isNotEmpty() && !isSaving && !isAttaching,
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        if (isSaving) {
-                            CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.saving), fontSize = 12.sp)
-                        } else {
-                            Text(stringResource(R.string.save))
-                        }
+                        Text(if (documentId == 0) stringResource(R.string.save) else stringResource(R.string.update_details))
                     }
                 }
             )
@@ -259,7 +281,8 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                 value = title, onValueChange = { title = it },
                 label = { Text(stringResource(R.string.doc_title_label)) },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
             )
             Spacer(Modifier.height(24.dp))
             
@@ -268,13 +291,12 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                 onClick = { showCategorySheet = true },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Category, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
-                    Text(text = type, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Text(text = type, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.weight(1f))
                     Icon(Icons.Default.UnfoldMore, null, tint = Color.Gray)
                 }
@@ -287,8 +309,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                 onClick = { showDatePicker = true },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Event, null, tint = MaterialTheme.colorScheme.primary)
@@ -322,11 +343,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                         Text(stringResource(R.string.attachments), fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
                         if (isAttaching) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.attaching), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                            }
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
                             TextButton(onClick = { pickerLauncher.launch("*/*") }) {
                                 Icon(Icons.Default.AttachFile, null, Modifier.size(18.dp))
@@ -346,11 +363,15 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                                 val key = viewModel.getVaultKey()
                                 FileListItem(
                                     path = path, 
-                                    onDelete = { filePaths = filePaths - path }, 
+                                    onDelete = { 
+                                        filePaths = filePaths - path
+                                        if (newlyAddedFiles.contains(path)) {
+                                            viewModel.deleteOrphanedFile(path)
+                                            newlyAddedFiles.remove(path)
+                                        }
+                                    }, 
                                     onShare = {
-                                        sharingFilePath = path
-                                        sharingFileName = path.substringAfterLast("/")
-                                        showIndividualQualityDialog = true
+                                        viewModel.shareDocument(path, path.substringAfterLast("/"), QualityOption.Original)
                                     }, 
                                     onView = {
                                         if (key != null) viewModel.sharingUtils.viewFile(path, key, path.substringAfterLast("/"))
@@ -377,7 +398,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 fun FileListItem(path: String, onDelete: () -> Unit, onShare: () -> Unit, onView: () -> Unit) {
     val fileName = path.substringAfterLast("/")
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp).background(Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp).clickable { onView() },
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp)).padding(8.dp).clickable { onView() },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray, modifier = Modifier.size(20.dp))

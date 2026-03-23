@@ -226,6 +226,11 @@
     <string name="back_to_categories">Back to Categories</string>
     <string name="saving">Saving&#8230;</string>
     <string name="attaching">Attaching&#8230;</string>
+    <string name="unsaved_changes_title">Unsaved Changes</string>
+    <string name="unsaved_changes_desc">You have unsaved changes. Do you want to discard them?</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep Editing</string>
+    <string name="original">Original</string>
 
     <!-- Document Categories -->
     <string name="cat_identity">Identity</string>

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "4dff94c9093a7c17de6d5d3241a23b4a",
+    "identityHash": "faa443e274310129d2c546164a889918",
     "entities": [
       {
         "tableName": "passwords",
@@ -102,7 +102,7 @@
       },
       {
         "tableName": "documents",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `remoteId` TEXT NOT NULL, `title` TEXT NOT NULL, `documentType` TEXT NOT NULL, `encryptedFields` BLOB NOT NULL, `encryptedNotes` BLOB NOT NULL, `filePaths` TEXT NOT NULL, `thumbnailPath` TEXT, `expiryDate` INTEGER, `createdAt` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `remoteId` TEXT NOT NULL, `title` TEXT NOT NULL, `documentType` TEXT NOT NULL, `encryptedFields` BLOB NOT NULL, `encryptedNotes` BLOB NOT NULL, `filePaths` TEXT NOT NULL, `thumbnailPath` TEXT, `expiryDate` INTEGER, `createdAt` INTEGER NOT NULL, `isFavorite` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -161,6 +161,12 @@
           {
             "fieldPath": "createdAt",
             "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isFavorite",
+            "columnName": "isFavorite",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -302,7 +308,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4dff94c9093a7c17de6d5d3241a23b4a')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'faa443e274310129d2c546164a889918')"
     ]
   }
 }
