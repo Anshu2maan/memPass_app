@@ -74,6 +74,7 @@ fun SettingsScreen(navController: NavHostController, viewModel: VaultViewModel) 
     var showGenDialog by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var showChangePinDialog by remember { mutableStateOf(false) }
+    var showExportHistoryDialog by remember { mutableStateOf(false) }
     var showImportSuccessDialog by remember { mutableStateOf<ImportResult?>(null) }
     
     var selectedImportUri by remember { mutableStateOf<Uri?>(null) }
@@ -179,7 +180,6 @@ fun SettingsScreen(navController: NavHostController, viewModel: VaultViewModel) 
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     screenSecurityEnabled = enabled
                                     sharedPrefs.edit().putBoolean(Constants.KEY_SCREEN_SECURITY_ENABLED, enabled).apply()
-                                    // Activity will react via OnSharedPreferenceChangeListener
                                 }
                             )
                         }
@@ -247,7 +247,7 @@ fun SettingsScreen(navController: NavHostController, viewModel: VaultViewModel) 
                     SettingsDivider()
                     SettingsItem(
                         title = stringResource(R.string.restore_drive),
-                        description = stringResource(R.string.restore_drive), // Or specific desc if available
+                        description = stringResource(R.string.restore_drive), 
                         icon = Icons.Default.SettingsBackupRestore,
                         iconColor = BrandAmber,
                         onClick = { restoreLauncher.launch(getGoogleSignInIntent()) }
@@ -267,6 +267,14 @@ fun SettingsScreen(navController: NavHostController, viewModel: VaultViewModel) 
                         icon = Icons.Default.FileOpen,
                         iconColor = BrandEmerald,
                         onClick = { importLauncher.launch("*/*") }
+                    )
+                    SettingsDivider()
+                    SettingsItem(
+                        title = stringResource(R.string.export_history),
+                        description = stringResource(R.string.export_history_title),
+                        icon = Icons.Default.History,
+                        iconColor = BrandIndigo,
+                        onClick = { showExportHistoryDialog = true }
                     )
                 }
 
@@ -297,6 +305,10 @@ fun SettingsScreen(navController: NavHostController, viewModel: VaultViewModel) 
 
     if (showRecoveryKeyDialog) {
         RecoveryKeySettingsDialog(viewModel = viewModel, onDismiss = { showRecoveryKeyDialog = false })
+    }
+
+    if (showExportHistoryDialog) {
+        ExportHistoryDialog(viewModel = viewModel, onDismiss = { showExportHistoryDialog = false })
     }
 
     if (showBiometricConfirmDialog) {

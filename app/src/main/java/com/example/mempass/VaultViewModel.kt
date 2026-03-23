@@ -78,7 +78,7 @@ open class BaseVaultViewModel(
         return unlocked
     }
 
-    fun lockVault() {
+    open fun lockVault() {
         vaultManager.clearKey()
         _isUnlocked.value = false
     }

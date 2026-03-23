@@ -15,13 +15,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -32,6 +37,7 @@ import androidx.work.*
 import com.example.mempass.common.Constants
 import com.example.mempass.ui.navigation.NavGraph
 import com.example.mempass.ui.theme.MempassTheme
+import com.example.mempass.ui.theme.BrandRose
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -55,7 +61,6 @@ class MainActivity : FragmentActivity() {
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_SCREEN_OFF) {
-                // Immediate lock on screen off (Concern #3 Fixed)
                 vaultManager.clearKey()
             }
         }
@@ -70,18 +75,14 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Security Recommendation: Clear temporary files on startup
         SecurityUtils.clearTemporaryFiles(this)
         
-        // Initial setup of screen security
         val isScreenSecurityEnabled = securityPrefs.getBoolean(Constants.KEY_SCREEN_SECURITY_ENABLED, true)
         updateScreenSecurity(isScreenSecurityEnabled)
         securityPrefs.registerOnSharedPreferenceChangeListener(securityPrefListener)
         
-        // Register Screen Off Receiver
         registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
         
-        // Schedule workers
         setupWorkers()
 
         setContent {
@@ -106,7 +107,6 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            // Request Permissions on App Launch
             val permissionsToRequest = mutableListOf<String>()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -119,9 +119,7 @@ class MainActivity : FragmentActivity() {
 
             val launcher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestMultiplePermissions(),
-                onResult = { permissions ->
-                    // Permissions handled
-                }
+                onResult = { }
             )
 
             LaunchedEffect(Unit) {
@@ -133,10 +131,10 @@ class MainActivity : FragmentActivity() {
             MempassTheme(darkTheme = useDarkTheme) {
                 val navController = rememberNavController()
                 val isUnlocked by viewModel.isUnlocked.collectAsState()
+                val lockoutTime by viewModel.lockoutTimeRemaining.collectAsState()
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
-                // Auto-lock navigation logic
                 LaunchedEffect(isUnlocked) {
                     if (!isUnlocked && currentRoute != "unlock" && currentRoute != "setup" && currentRoute != null && !currentRoute.startsWith("biometric_setup")) {
                         navController.navigate("unlock") {
@@ -148,11 +146,43 @@ class MainActivity : FragmentActivity() {
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbarHostState) }
                 ) { padding ->
-                    Surface(
-                        modifier = Modifier.fillMaxSize().padding(padding), 
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        NavGraph(navController = navController, vaultViewModel = viewModel)
+                    Box(Modifier.fillMaxSize()) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize().padding(padding), 
+                            color = MaterialTheme.colorScheme.background
+                        ) {
+                            NavGraph(navController = navController, vaultViewModel = viewModel)
+                        }
+
+                        // Global Lockout Overlay
+                        if (lockoutTime > 0) {
+                            Surface(
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color.Black.copy(alpha = 0.9f)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.LockClock, null, modifier = Modifier.size(64.dp), tint = BrandRose)
+                                    Spacer(Modifier.height(24.dp))
+                                    Text(
+                                        stringResource(R.string.temporary_lockout),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 24.sp,
+                                        color = Color.White
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        stringResource(R.string.lockout_countdown, lockoutTime / 1000),
+                                        fontSize = 16.sp,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -190,7 +220,6 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun setupWorkers() {
-        // Schedule Sync Reminder (Every 24 hours)
         SyncReminderWorker.schedule(this)
 
         val constraints = Constraints.Builder()
@@ -219,7 +248,6 @@ class MainActivity : FragmentActivity() {
             selfDestructRequest
         )
 
-        // Schedule Document Expiry Checker (Every 24 hours)
         val expiryRequest = PeriodicWorkRequestBuilder<DocumentExpiryWorker>(24, TimeUnit.HOURS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.HOURS)
             .build()

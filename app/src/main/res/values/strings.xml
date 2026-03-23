@@ -88,6 +88,8 @@
     <string name="rotation_success_title">PIN Changed Successfully</string>
     <string name="rotation_success_desc">Your Master PIN has been updated and your data has been re-encrypted with a new master key. Please save your NEW recovery key below.</string>
     <string name="rotation_recovery_key_warning">IMPORTANT: Your old recovery key will no longer work. Save this new one immediately.</string>
+    <string name="temporary_lockout">Temporary Lockout</string>
+    <string name="lockout_countdown">Too many attempts. Please wait %1$d seconds.</string>
 
     <!-- Password Screens -->
     <string name="search_accounts">Search accounts&#8230;</string>
@@ -123,6 +125,9 @@
     <string name="crack_time">Crack time: %1$s</string>
     <string name="algo_version">Algorithm Version:</string>
     <string name="version_format">v%1$d</string>
+    <string name="autofill_metadata">Autofill Metadata</string>
+    <string name="package_name">Package Name (e.g. com.example.app)</string>
+    <string name="domain_url">Domain / URL (e.g. example.com)</string>
 
     <!-- Settings Screens -->
     <string name="settings_title">Settings</string>
@@ -302,6 +307,8 @@
     <string name="tags_placeholder">Tags (comma separated)</string>
     <string name="untitled">Untitled</string>
     <string name="unlock_vault">Unlock Vault</string>
+    <string name="checklist_item">Checklist item</string>
+    <string name="add_item">Add Item</string>
 
     <!-- Note Categories -->
     <string name="cat_personal">Personal</string>

@@ -23,7 +23,17 @@ class PasswordViewModel @Inject constructor(
 ) : BaseVaultViewModel(application, repository, prefs, historyPrefs, vaultManager, authManager, biometricHelper, cameraHelper) {
     val allPasswords: Flow<List<PasswordEntry>> = repository.allPasswords
 
-    fun savePassword(service: String, user: CharArray, pass: CharArray, notes: CharArray, totpSecret: CharArray? = null, isFavorite: Boolean = false, id: Int = 0) {
+    fun savePassword(
+        service: String, 
+        user: CharArray, 
+        pass: CharArray, 
+        notes: CharArray, 
+        totpSecret: CharArray? = null, 
+        associatedPackage: String? = null,
+        associatedDomain: String? = null,
+        isFavorite: Boolean = false, 
+        id: Int = 0
+    ) {
         val key = getVaultKey() ?: return
         viewModelScope.launch {
             try {
@@ -34,6 +44,8 @@ class PasswordViewModel @Inject constructor(
                     encryptedPassword = CryptoUtils.encrypt(pass, key),
                     encryptedNotes = CryptoUtils.encrypt(notes, key),
                     encryptedTotpSecret = totpSecret?.let { CryptoUtils.encrypt(it, key) },
+                    associatedPackageName = associatedPackage,
+                    associatedDomain = associatedDomain,
                     isFavorite = isFavorite
                 )
                 repository.insertPassword(entry)

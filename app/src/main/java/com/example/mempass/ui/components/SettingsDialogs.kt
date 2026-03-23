@@ -3,6 +3,8 @@ package com.example.mempass.ui.components
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -476,6 +478,42 @@ fun FactoryResetDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
         text = { Text(stringResource(R.string.confirm_reset_desc), color = MaterialTheme.colorScheme.onSurface) },
         confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = BrandRose)) { Text(stringResource(R.string.destroy_everything)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel), color = Color.Gray) } }
+    )
+}
+
+@Composable
+fun ExportHistoryDialog(viewModel: VaultViewModel, onDismiss: () -> Unit) {
+    val logs = remember { viewModel.getExportLogs() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(stringResource(R.string.export_history_title), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface) },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                if (logs.isEmpty()) {
+                    Text(stringResource(R.string.no_history_found), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(logs) { log ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    log, 
+                                    Modifier.padding(12.dp).fillMaxWidth(),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
+        }
     )
 }
 

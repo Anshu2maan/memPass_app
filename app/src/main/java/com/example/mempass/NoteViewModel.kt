@@ -52,6 +52,11 @@ class NoteViewModel @Inject constructor(
     private val _unlockedNoteIds = MutableStateFlow<Set<Int>>(emptySet())
     val unlockedNoteIds: StateFlow<Set<Int>> = _unlockedNoteIds
 
+    override fun lockVault() {
+        super.lockVault()
+        _unlockedNoteIds.value = emptySet()
+    }
+
     fun markNoteAsUnlocked(id: Int) {
         _unlockedNoteIds.value = _unlockedNoteIds.value + id
     }

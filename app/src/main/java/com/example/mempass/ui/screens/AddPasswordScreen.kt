@@ -67,11 +67,14 @@ fun AddPasswordScreen(navController: NavHostController, viewModel: PasswordViewM
         CryptoUtils.wipe(chars)
         s
     }
+    var associatedPackage by remember(existing) { mutableStateOf(existing?.associatedPackageName ?: "") }
+    var associatedDomain by remember(existing) { mutableStateOf(existing?.associatedDomain ?: "") }
     var isFavorite by remember(existing) { mutableStateOf(existing?.isFavorite ?: false) }
     
     var showDeterministicDialog by remember { mutableStateOf(false) }
     var showRandomDialog by remember { mutableStateOf(false) }
     var isPassVisible by remember { mutableStateOf(false) }
+    var showAdvanced by remember { mutableStateOf(associatedPackage.isNotEmpty() || associatedDomain.isNotEmpty()) }
 
     val isTotpValid = remember(totpSecret) {
         if (totpSecret.isEmpty()) true 
@@ -203,6 +206,33 @@ fun AddPasswordScreen(navController: NavHostController, viewModel: PasswordViewM
             Spacer(Modifier.height(16.dp))
             PremiumTextField(value = notes, onValueChange = { notes = it }, label = stringResource(R.string.private_notes), icon = Icons.AutoMirrored.Filled.Notes)
 
+            Spacer(Modifier.height(16.dp))
+            TextButton(
+                onClick = { showAdvanced = !showAdvanced },
+                modifier = Modifier.align(Alignment.Start)
+            ) {
+                Icon(if(showAdvanced) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.autofill_metadata), fontWeight = FontWeight.Bold)
+            }
+
+            if (showAdvanced) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+                    PremiumTextField(
+                        value = associatedPackage,
+                        onValueChange = { associatedPackage = it },
+                        label = stringResource(R.string.package_name),
+                        icon = Icons.Default.Android
+                    )
+                    PremiumTextField(
+                        value = associatedDomain,
+                        onValueChange = { associatedDomain = it },
+                        label = stringResource(R.string.domain_url),
+                        icon = Icons.Default.Link
+                    )
+                }
+            }
+
             Spacer(Modifier.height(32.dp))
             Button(
                 onClick = { 
@@ -217,7 +247,17 @@ fun AddPasswordScreen(navController: NavHostController, viewModel: PasswordViewM
                         val notesChars = notes.toCharArray()
                         val totpChars = if(totpSecret.isEmpty()) null else totpSecret.toCharArray()
 
-                        viewModel.savePassword(service, userChars, passChars, notesChars, totpChars, isFavorite = isFavorite, id = editId)
+                        viewModel.savePassword(
+                            service = service, 
+                            user = userChars, 
+                            pass = passChars, 
+                            notes = notesChars, 
+                            totpSecret = totpChars,
+                            associatedPackage = associatedPackage.ifBlank { null },
+                            associatedDomain = associatedDomain.ifBlank { null },
+                            isFavorite = isFavorite, 
+                            id = editId
+                        )
                         
                         CryptoUtils.wipe(userChars, passChars, notesChars, totpChars)
 

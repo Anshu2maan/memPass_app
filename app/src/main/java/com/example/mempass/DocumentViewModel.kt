@@ -9,6 +9,8 @@ import com.example.mempass.ui.components.QualityOption
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +48,32 @@ class DocumentViewModel @Inject constructor(
 
     val allDocuments: Flow<List<DocumentEntry>> = repository.allDocuments
 
+    private val _isOcrProcessing = MutableStateFlow(false)
+    val isOcrProcessing: StateFlow<Boolean> = _isOcrProcessing
+
+    private val _ocrResults = MutableStateFlow<Map<String, String>?>(null)
+    val ocrResults: StateFlow<Map<String, String>?> = _ocrResults
+
+    fun clearOcrResults() {
+        _ocrResults.value = null
+    }
+
+    fun performOcrOnFiles(filePaths: List<String>) {
+        val key = getVaultKey() ?: return
+        viewModelScope.launch {
+            _isOcrProcessing.value = true
+            try {
+                val results = ocrHelper.extractMergedInfo(filePaths, key)
+                _ocrResults.value = results
+            } catch (e: Exception) {
+                Log.e("DocumentViewModel", "OCR failed", e)
+                emitCryptoError("OCR failed: ${e.message}")
+            } finally {
+                _isOcrProcessing.value = false
+            }
+        }
+    }
+
     suspend fun generateAndSaveThumbnail(filePath: String): String? {
         val key = getVaultKey() ?: return null
         return try {
@@ -66,7 +94,7 @@ class DocumentViewModel @Inject constructor(
 
     fun saveDocument(title: String, type: String, fieldsJson: CharArray, notes: CharArray, filePaths: List<String>, expiryDate: Long? = null, isFavorite: Boolean = false, id: Int = 0, onComplete: () -> Unit = {}) {
         val key = getVaultKey() ?: run {
-            onComplete() // Safety: Stop loading state if key missing
+            onComplete() 
             return
         }
         
@@ -82,7 +110,6 @@ class DocumentViewModel @Inject constructor(
                             val oldPaths = splitPaths(old.filePaths).toSet()
                             val newPaths = filePaths.toSet()
                             
-                            // Delete removed files
                             (oldPaths - newPaths).forEach { fileUtils.deleteFileIfExists(it) }
                             
                             thumbnailPath = old.thumbnailPath
@@ -137,13 +164,41 @@ class DocumentViewModel @Inject constructor(
         }
     }
     
-    suspend fun saveUriToInternalEncrypted(uri: Uri): String? {
-        val key = getVaultKey() ?: return null
-        val file = fileUtils.uriToFile(uri)
-        val destination = File(getApplication<Application>().filesDir, "doc_${UUID.randomUUID()}.enc")
-        FileEncryptor.encryptFile(file, destination, key)
-        if (file.exists()) file.delete()
-        return destination.absolutePath
+    suspend fun saveUriToInternalEncrypted(uri: Uri, quality: QualityOption = QualityOption.Original): String? = withContext(Dispatchers.IO) {
+        val key = getVaultKey() ?: return@withContext null
+        val context = getApplication<Application>()
+        
+        // 1. Copy Uri to Temp
+        val tempFile = fileUtils.uriToFile(uri)
+        var fileToEncrypt = tempFile
+        val extension = tempFile.extension.lowercase()
+
+        // 2. Optional Compression
+        if (quality.sizeKb != null) {
+            val compressedFile = File(context.cacheDir, "save_comp_${UUID.randomUUID()}.$extension")
+            val success = if (extension == "pdf") {
+                pdfCompressor.compressPdfToTargetSize(tempFile, compressedFile, quality.sizeKb)
+            } else if (extension == "jpg" || extension == "jpeg" || extension == "png") {
+                imageCompressor.compressImageToTargetSize(tempFile, compressedFile, quality.sizeKb)
+            } else false
+            
+            if (success) {
+                fileToEncrypt = compressedFile
+            }
+        }
+
+        // 3. Encrypt
+        val destination = File(context.filesDir, "doc_${UUID.randomUUID()}.$extension.enc")
+        try {
+            FileEncryptor.encryptFile(fileToEncrypt, destination, key)
+            destination.absolutePath
+        } catch (e: Exception) {
+            Log.e("DocumentViewModel", "Encryption failed", e)
+            null
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+            if (fileToEncrypt != tempFile && fileToEncrypt.exists()) fileToEncrypt.delete()
+        }
     }
 
     fun deleteOrphanedFile(path: String) {

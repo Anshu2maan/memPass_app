@@ -1,5 +1,6 @@
 package com.example.mempass.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,6 +35,8 @@ import com.example.mempass.DocumentEntry
 import com.example.mempass.DocumentViewModel
 import com.example.mempass.R
 import com.example.mempass.ui.components.QualityOption
+import com.example.mempass.ui.components.QualityPickerDialog
+import com.example.mempass.ui.theme.BrandIndigo
 import com.example.mempass.ui.theme.BrandRose
 import kotlinx.coroutines.launch
 import java.io.File
@@ -84,6 +87,10 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
     var isAttaching by remember { mutableStateOf(false) }
 
     var showExitConfirmation by remember { mutableStateOf(false) }
+    var showQualityPickerForImport by remember { mutableStateOf<Uri?>(null) }
+    
+    val ocrResults by viewModel.ocrResults.collectAsState()
+    val isOcrProcessing by viewModel.isOcrProcessing.collectAsState()
 
     val hasChanges = remember(title, type, notes, filePaths, expiryDate, isFavorite) {
         val initialNotesChars = if(existingDoc != null) viewModel.decryptToChars(existingDoc.encryptedNotes) else CharArray(0)
@@ -108,27 +115,33 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 
     BackHandler(onBack = onExit)
 
-    val pickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-        if (uris.isNotEmpty()) {
-            isAttaching = true
-            scope.launch {
-                var successCount = 0
-                uris.forEach { uri ->
-                    val path = viewModel.saveUriToInternalEncrypted(uri)
+    val pickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            showQualityPickerForImport = uri
+        }
+    }
+
+    if (showQualityPickerForImport != null) {
+        QualityPickerDialog(
+            originalSizeKb = 0, // Not strictly needed for logic, but can be improved
+            onDismiss = { showQualityPickerForImport = null },
+            onQualitySelected = { quality ->
+                isAttaching = true
+                scope.launch {
+                    val path = viewModel.saveUriToInternalEncrypted(showQualityPickerForImport!!, quality)
                     if (path != null) {
                         if (!filePaths.contains(path)) {
                             filePaths = filePaths + path
                             newlyAddedFiles.add(path)
                         }
-                        successCount++
+                    } else {
+                        Toast.makeText(context, context.getString(R.string.files_failed_to_encrypt), Toast.LENGTH_SHORT).show()
                     }
-                }
-                isAttaching = false
-                if (successCount < uris.size) {
-                    Toast.makeText(context, context.getString(R.string.files_failed_to_encrypt), Toast.LENGTH_SHORT).show()
+                    isAttaching = false
+                    showQualityPickerForImport = null
                 }
             }
-        }
+        )
     }
 
     var showDatePicker by remember { mutableStateOf(false) }
@@ -239,6 +252,39 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
         }
     }
 
+    if (ocrResults != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearOcrResults() },
+            title = { Text(stringResource(R.string.auto_fill_detected_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.auto_fill_detected_desc), fontSize = 14.sp)
+                    Spacer(Modifier.height(12.dp))
+                    ocrResults!!.forEach { (key, value) ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp).clickable { 
+                            if(key.contains("Number")) title = value
+                            if(key == "Potential Expiry" || key == "Expiry Date") {
+                                try {
+                                    val date = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).parse(value)
+                                    expiryDate = date?.time
+                                } catch (e: Exception) {}
+                            }
+                            Toast.makeText(context, "Filled $key", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.AddCircleOutline, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("$key: ", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(value, fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearOcrResults() }) { Text(stringResource(R.string.done)) }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -345,10 +391,18 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                         if (isAttaching) {
                             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                            TextButton(onClick = { pickerLauncher.launch("*/*") }) {
-                                Icon(Icons.Default.AttachFile, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.attach_files))
+                            Row {
+                                if (filePaths.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.performOcrOnFiles(filePaths) }, enabled = !isOcrProcessing) {
+                                        if (isOcrProcessing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        else Icon(Icons.Default.DocumentScanner, null, tint = BrandIndigo)
+                                    }
+                                }
+                                TextButton(onClick = { pickerLauncher.launch("*/*") }) {
+                                    Icon(Icons.Default.AttachFile, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(stringResource(R.string.attach_files))
+                                }
                             }
                         }
                     }

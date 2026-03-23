@@ -69,6 +69,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
         val initialPaths = existingNote?.snippetFilePaths?.split("|")?.filter { it.isNotEmpty() } ?: emptyList()
         mutableStateOf(initialPaths)
     }
+    var isChecklist by remember(existingNote) { mutableStateOf(existingNote?.isChecklist ?: false) }
     
     val newlyAddedFiles = remember { mutableStateListOf<String>() }
     var showCategorySheet by remember { mutableStateOf(false) }
@@ -76,7 +77,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
     var isSaving by remember { mutableStateOf(false) }
     var showExitConfirmation by remember { mutableStateOf(false) }
 
-    val hasChanges = remember(headline, content, category, isLocked, isFavorite, selfDestructAt, attachedFiles) {
+    val hasChanges = remember(headline, content, category, isLocked, isFavorite, selfDestructAt, attachedFiles, isChecklist) {
         val initialContentChars = if(existingNote != null) viewModel.decryptToChars(existingNote.encryptedContent) else CharArray(0)
         val initialContent = String(initialContentChars)
         CryptoUtils.wipe(initialContentChars)
@@ -87,6 +88,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
         isLocked != (existingNote?.isLocked ?: false) ||
         isFavorite != (existingNote?.isFavorite ?: false) ||
         selfDestructAt != existingNote?.selfDestructAt ||
+        isChecklist != (existingNote?.isChecklist ?: false) ||
         attachedFiles != (existingNote?.snippetFilePaths?.split("|")?.filter { it.isNotEmpty() } ?: emptyList<String>())
     }
 
@@ -152,6 +154,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                                 content = content.toCharArray(),
                                 category = category,
                                 colorHex = "#FFFFFF",
+                                isChecklist = isChecklist,
                                 snippetFilePaths = attachedFiles,
                                 selfDestructAt = selfDestructAt,
                                 isLocked = isLocked,
@@ -178,13 +181,22 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                 shape = RoundedCornerShape(12.dp)
             )
             Spacer(Modifier.height(16.dp))
-            OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
-                placeholder = { Text(stringResource(R.string.secrets_placeholder)) },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
-                shape = RoundedCornerShape(12.dp)
-            )
+            
+            if (isChecklist) {
+                ChecklistEditor(
+                    content = content,
+                    onContentChange = { content = it }
+                )
+            } else {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    placeholder = { Text(stringResource(R.string.secrets_placeholder)) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+            
             Spacer(Modifier.height(20.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -193,6 +205,12 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                     onClick = { showCategorySheet = true },
                     label = { Text(if(category.isEmpty()) stringResource(R.string.category) else category) },
                     leadingIcon = { Icon(Icons.Default.Category, null, Modifier.size(16.dp)) }
+                )
+                FilterChip(
+                    selected = isChecklist,
+                    onClick = { isChecklist = !isChecklist },
+                    label = { Text(stringResource(R.string.checklist)) },
+                    leadingIcon = { Icon(Icons.Default.Checklist, null, Modifier.size(16.dp)) }
                 )
                 FilterChip(
                     selected = isLocked,
@@ -315,5 +333,63 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                 TextButton(onClick = { showTimerDialog = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
+    }
+}
+
+@Composable
+fun ChecklistEditor(content: String, onContentChange: (String) -> Unit) {
+    val items = remember(content) { 
+        if (content.isBlank()) mutableListOf("") 
+        else content.split("\n").toMutableList()
+    }
+    
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.forEachIndexed { index, item ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val isChecked = item.startsWith("[x] ")
+                val cleanText = item.removePrefix("[x] ").removePrefix("[ ] ")
+                
+                Checkbox(
+                    checked = isChecked,
+                    onCheckedChange = { checked ->
+                        items[index] = if(checked) "[x] $cleanText" else "[ ] $cleanText"
+                        onContentChange(items.joinToString("\n"))
+                    }
+                )
+                
+                TextField(
+                    value = cleanText,
+                    onValueChange = { newText ->
+                        items[index] = if(isChecked) "[x] $newText" else "[ ] $newText"
+                        onContentChange(items.joinToString("\n"))
+                    },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text(stringResource(R.string.checklist_item)) },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        errorContainerColor = Color.Transparent
+                    )
+                )
+                
+                IconButton(onClick = {
+                    items.removeAt(index)
+                    if(items.isEmpty()) items.add("")
+                    onContentChange(items.joinToString("\n"))
+                }) {
+                    Icon(Icons.Default.Delete, null, tint = BrandRose, modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+        
+        TextButton(onClick = {
+            items.add("[ ] ")
+            onContentChange(items.joinToString("\n"))
+        }) {
+            Icon(Icons.Default.Add, null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.add_item))
+        }
     }
 }

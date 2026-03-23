@@ -25,6 +25,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -96,7 +97,6 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
     }
 
     if (selectedNote != null) {
-        // Re-fetch to get updated state
         val currentNote = notes.find { it.id == selectedNote!!.id } ?: selectedNote!!
         NoteDetailDialog(
             note = currentNote,
@@ -125,7 +125,7 @@ fun NoteCard(note: NoteEntry, onClick: () -> Unit) {
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(
-                        if(note.isLocked) Icons.Default.Lock else Icons.AutoMirrored.Filled.Notes,
+                        if(note.isLocked) Icons.Default.Lock else if(note.isChecklist) Icons.Default.Checklist else Icons.AutoMirrored.Filled.Notes,
                         null,
                         Modifier.padding(8.dp).size(20.dp),
                         tint = BrandIndigo
@@ -251,14 +251,18 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
                 }
             }
         } else {
-            content?.let {
-                Text(
-                    it,
-                    modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(),
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            content?.let { text ->
+                if (note.isChecklist) {
+                    ChecklistDisplay(text)
+                } else {
+                    Text(
+                        text,
+                        modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(),
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             if (paths.isNotEmpty()) {
@@ -290,6 +294,34 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
                     }
                 }
                 Spacer(Modifier.height(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun ChecklistDisplay(content: String) {
+    val lines = content.split("\n")
+    Column(modifier = Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        lines.forEach { line ->
+            if (line.isNotBlank()) {
+                val isChecked = line.startsWith("[x] ")
+                val text = line.removePrefix("[x] ").removePrefix("[ ] ")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (isChecked) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                        null,
+                        tint = if (isChecked) BrandIndigo else Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = text,
+                        fontSize = 15.sp,
+                        color = if (isChecked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None
+                    )
+                }
             }
         }
     }
