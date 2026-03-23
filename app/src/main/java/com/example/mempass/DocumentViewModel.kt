@@ -122,6 +122,12 @@ class DocumentViewModel @Inject constructor(
             return
         }
         
+        // SECURITY FIX: Encrypt synchronously BEFORE the coroutine starts.
+        // This prevents a race condition where the UI wipes the source CharArrays 
+        // before the background thread can encrypt them.
+        val encFields = CryptoUtils.encrypt(fieldsJson, key)
+        val encNotes = CryptoUtils.encrypt(notes, key)
+
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
@@ -148,8 +154,8 @@ class DocumentViewModel @Inject constructor(
 
                     val doc = DocumentEntry(
                         id = id, title = title, documentType = type,
-                        encryptedFields = CryptoUtils.encrypt(fieldsJson, key),
-                        encryptedNotes = CryptoUtils.encrypt(notes, key),
+                        encryptedFields = encFields,
+                        encryptedNotes = encNotes,
                         filePaths = filePaths.joinToString(PATH_SEPARATOR),
                         thumbnailPath = thumbnailPath,
                         expiryDate = expiryDate,

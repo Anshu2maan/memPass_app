@@ -195,14 +195,23 @@ class VaultViewModel @Inject constructor(
         id: Int = 0
     ) {
         val key = getVaultKey() ?: return
+        
+        // SECURITY FIX: Encrypt synchronously BEFORE the coroutine starts.
+        // This prevents a race condition where the UI wipes the source CharArrays 
+        // before the background thread can encrypt them.
+        val encUser = CryptoUtils.encrypt(user, key)
+        val encPass = CryptoUtils.encrypt(pass, key)
+        val encNotes = CryptoUtils.encrypt(notes, key)
+        val encTotp = totpSecret?.let { CryptoUtils.encrypt(it, key) }
+
         viewModelScope.launch {
             try {
                 repository.insertPassword(PasswordEntry(
                     id = id, serviceName = service,
-                    encryptedUsername = CryptoUtils.encrypt(user, key),
-                    encryptedPassword = CryptoUtils.encrypt(pass, key),
-                    encryptedNotes = CryptoUtils.encrypt(notes, key),
-                    encryptedTotpSecret = totpSecret?.let { CryptoUtils.encrypt(it, key) },
+                    encryptedUsername = encUser,
+                    encryptedPassword = encPass,
+                    encryptedNotes = encNotes,
+                    encryptedTotpSecret = encTotp,
                     associatedPackageName = associatedPackage,
                     associatedDomain = associatedDomain
                 ))
