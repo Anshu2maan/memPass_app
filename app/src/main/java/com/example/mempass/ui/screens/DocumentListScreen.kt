@@ -4,9 +4,11 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -37,10 +39,14 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
     val documents by viewModel.allDocuments.collectAsState(initial = emptyList())
     val context = LocalContext.current
     
-    // For Multi-file Selection logic
+    // Multi-select State
+    val selectedDocs = remember { mutableStateListOf<DocumentEntry>() }
+    val isSelectionMode = selectedDocs.isNotEmpty()
+
+    // Existing Dialog States
     var showQualityDialog by remember { mutableStateOf(false) }
     var showFileSelectionSheet by remember { mutableStateOf(false) }
-    var selectedDoc by remember { mutableStateOf<DocumentEntry?>(null) }
+    var selectedDocForShare by remember { mutableStateOf<DocumentEntry?>(null) }
     var selectedFilePathForShare by remember { mutableStateOf<String?>(null) }
     var selectedFileNameForShare by remember { mutableStateOf<String?>(null) }
     
@@ -52,13 +58,36 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
         it.documentType.contains(searchQuery, ignoreCase = true)
     }
 
-    // Step 2: Quality Picker
+    // Batch Action Dialogs
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    if (showBatchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            title = { Text(stringResource(R.string.delete_entry_title)) },
+            text = { Text(stringResource(R.string.delete_entry_desc)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteDocuments(selectedDocs.toList())
+                    selectedDocs.clear()
+                    showBatchDeleteConfirm = false
+                }) {
+                    Text(stringResource(R.string.discard), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
     if (showQualityDialog && selectedFilePathForShare != null) {
         val originalSize = remember(selectedFilePathForShare) {
             File(selectedFilePathForShare!!).length() / 1024
         }
         
         QualityPickerDialog(
+            titleRes = R.string.share_options,
             originalSizeKb = originalSize,
             onDismiss = { 
                 showQualityDialog = false
@@ -72,9 +101,8 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
         )
     }
 
-    // Step 1: File Selection (if multiple files exist)
-    if (showFileSelectionSheet && selectedDoc != null) {
-        val paths = DocumentViewModel.splitPaths(selectedDoc?.filePaths)
+    if (showFileSelectionSheet && selectedDocForShare != null) {
+        val paths = DocumentViewModel.splitPaths(selectedDocForShare?.filePaths)
         ModalBottomSheet(
             onDismissRequest = { showFileSelectionSheet = false }
         ) {
@@ -100,7 +128,28 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
 
     Scaffold(
         topBar = {
-            if (!isSearching) {
+            if (isSelectionMode) {
+                TopAppBar(
+                    title = { Text("${selectedDocs.size} Selected") },
+                    navigationIcon = {
+                        IconButton(onClick = { selectedDocs.clear() }) {
+                            Icon(Icons.Default.Close, null)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            val allFavorite = selectedDocs.all { it.isFavorite }
+                            viewModel.toggleFavoriteForDocuments(selectedDocs.toList(), !allFavorite)
+                            selectedDocs.clear()
+                        }) {
+                            Icon(Icons.Default.Star, null)
+                        }
+                        IconButton(onClick = { showBatchDeleteConfirm = true }) {
+                            Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                )
+            } else if (!isSearching) {
                 LargeTopAppBar(
                     title = { Text(stringResource(R.string.documents), fontWeight = FontWeight.Black) },
                     navigationIcon = {
@@ -152,13 +201,15 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
             }
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { navController.navigate("add_document") },
-                icon = { Icon(Icons.Default.Add, null) },
-                text = { Text(stringResource(R.string.add_document)) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White
-            )
+            if (!isSelectionMode) {
+                ExtendedFloatingActionButton(
+                    onClick = { navController.navigate("add_document") },
+                    icon = { Icon(Icons.Default.Add, null) },
+                    text = { Text(stringResource(R.string.add_document)) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.White
+                )
+            }
         }
     ) { padding ->
         if (documents.isEmpty()) {
@@ -179,13 +230,27 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(filteredDocuments) { doc ->
+                items(filteredDocuments, key = { it.id }) { doc ->
+                    val isSelected = selectedDocs.contains(doc)
                     DocumentItem(
                         doc = doc, 
                         viewModel = viewModel,
-                        onClick = { navController.navigate("add_document?id=${doc.id}") },
+                        isSelected = isSelected,
+                        selectionMode = isSelectionMode,
+                        onClick = { 
+                            if (isSelectionMode) {
+                                if (isSelected) selectedDocs.remove(doc) else selectedDocs.add(doc)
+                            } else {
+                                navController.navigate("add_document?id=${doc.id}") 
+                            }
+                        },
+                        onLongClick = {
+                            if (!isSelectionMode) {
+                                selectedDocs.add(doc)
+                            }
+                        },
                         onShare = {
-                            selectedDoc = doc
+                            selectedDocForShare = doc
                             val paths = DocumentViewModel.splitPaths(doc.filePaths)
                             if (paths.size > 1) {
                                 showFileSelectionSheet = true
@@ -202,11 +267,15 @@ fun DocumentListScreen(navController: NavHostController, viewModel: DocumentView
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun DocumentItem(
     doc: DocumentEntry, 
     viewModel: DocumentViewModel, 
+    isSelected: Boolean,
+    selectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onShare: () -> Unit
 ) {
     var thumbnail by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
@@ -219,9 +288,21 @@ fun DocumentItem(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) 
+                MaterialTheme.colorScheme.primaryContainer 
+            else 
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -241,6 +322,15 @@ fun DocumentItem(
                         null, tint = MaterialTheme.colorScheme.primary
                     )
                 }
+
+                if (isSelected) {
+                    Box(
+                        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.CheckCircle, null, tint = Color.White)
+                    }
+                }
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
@@ -252,10 +342,19 @@ fun DocumentItem(
                     Text(stringResource(R.string.file_count, fileCount), fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.primary)
+            
+            if (!selectionMode) {
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Default.Share, null, tint = MaterialTheme.colorScheme.primary)
+                }
+                Icon(Icons.Default.ChevronRight, null, tint = Color.LightGray)
+            } else {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                )
             }
-            Icon(Icons.Default.ChevronRight, null, tint = Color.LightGray)
         }
     }
 }

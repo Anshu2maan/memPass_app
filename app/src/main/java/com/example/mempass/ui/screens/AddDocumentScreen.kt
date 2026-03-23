@@ -69,12 +69,13 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 
     var title by remember(existingDoc) { mutableStateOf(existingDoc?.title ?: "") }
     var type by remember(existingDoc) { mutableStateOf(existingDoc?.documentType ?: context.getString(R.string.sub_other)) }
-    var notes by remember(existingDoc) { 
+    
+    // Fix: Using remember with state for notes as CharArray to prevent string pooling leaks
+    val notesState = remember(existingDoc) {
         val chars = if(existingDoc != null) viewModel.decryptToChars(existingDoc.encryptedNotes) else CharArray(0)
-        val s = mutableStateOf(String(chars))
-        CryptoUtils.wipe(chars)
-        s
+        mutableStateOf(chars)
     }
+    
     var isFavorite by remember(existingDoc) { mutableStateOf(existingDoc?.isFavorite ?: false) }
     
     var filePaths by remember(existingDoc) { 
@@ -89,18 +90,20 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 
     var showExitConfirmation by remember { mutableStateOf(false) }
     var showQualityPickerForImport by remember { mutableStateOf<Uri?>(null) }
+    var fileToDeleteSoon by remember { mutableStateOf<String?>(null) }
     
     val ocrResults by viewModel.ocrResults.collectAsState()
     val isOcrProcessing by viewModel.isOcrProcessing.collectAsState()
 
-    val hasChanges = remember(title, type, notes, filePaths, expiryDate, isFavorite) {
+    val hasChanges = remember(title, type, notesState.value, filePaths, expiryDate, isFavorite) {
         val initialNotesChars = if(existingDoc != null) viewModel.decryptToChars(existingDoc.encryptedNotes) else CharArray(0)
         val initialNotes = String(initialNotesChars)
+        val currentNotes = String(notesState.value)
         CryptoUtils.wipe(initialNotesChars)
         
         title != (existingDoc?.title ?: "") ||
         type != (existingDoc?.documentType ?: context.getString(R.string.sub_other)) ||
-        notes != initialNotes ||
+        currentNotes != initialNotes ||
         filePaths != DocumentViewModel.splitPaths(existingDoc?.filePaths) ||
         expiryDate != existingDoc?.expiryDate ||
         isFavorite != (existingDoc?.isFavorite ?: false)
@@ -124,6 +127,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 
     if (showQualityPickerForImport != null) {
         QualityPickerDialog(
+            titleRes = R.string.import_quality,
             originalSizeKb = 0, 
             onDismiss = { showQualityPickerForImport = null },
             onQualitySelected = { quality ->
@@ -135,7 +139,6 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                         if (!filePaths.contains(path)) {
                             filePaths = filePaths + path
                             newlyAddedFiles.add(path)
-                            // Update thumbnail if this is the first file
                             if (thumbnailPath == null && result.second != null) {
                                 thumbnailPath = result.second
                             }
@@ -146,6 +149,30 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                     isAttaching = false
                     showQualityPickerForImport = null
                 }
+            }
+        )
+    }
+
+    if (fileToDeleteSoon != null) {
+        AlertDialog(
+            onDismissRequest = { fileToDeleteSoon = null },
+            title = { Text(stringResource(R.string.delete_attachment_title)) },
+            text = { Text(stringResource(R.string.delete_attachment_desc)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val path = fileToDeleteSoon!!
+                    filePaths = filePaths - path
+                    if (newlyAddedFiles.contains(path)) {
+                        viewModel.deleteOrphanedFile(path)
+                        newlyAddedFiles.remove(path)
+                    }
+                    fileToDeleteSoon = null
+                }) {
+                    Text(stringResource(R.string.discard), color = BrandRose, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDeleteSoon = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -312,17 +339,21 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                         onClick = {
                             isSaving = true
                             val fieldsChars = "{}".toCharArray()
-                            val notesChars = notes.toCharArray()
+                            val notesChars = notesState.value
                             viewModel.saveDocument(title, type, fieldsChars, notesChars, filePaths, expiryDate, isFavorite, documentId) {
                                 isSaving = false
-                                CryptoUtils.wipe(fieldsChars, notesChars)
+                                CryptoUtils.wipe(fieldsChars)
                                 navController.popBackStack()
                             }
                         },
                         enabled = title.isNotEmpty() && !isSaving && !isAttaching,
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Text(if (documentId == 0) stringResource(R.string.save) else stringResource(R.string.update_details))
+                        if (isSaving) {
+                            CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text(if (documentId == 0) stringResource(R.string.save) else stringResource(R.string.update_details))
+                        }
                     }
                 }
             )
@@ -424,11 +455,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
                                 FileListItem(
                                     path = path, 
                                     onDelete = { 
-                                        filePaths = filePaths - path
-                                        if (newlyAddedFiles.contains(path)) {
-                                            viewModel.deleteOrphanedFile(path)
-                                            newlyAddedFiles.remove(path)
-                                        }
+                                        fileToDeleteSoon = path
                                     }, 
                                     onShare = {
                                         viewModel.shareDocument(path, path.substringAfterLast("/"), QualityOption.Original)
@@ -445,7 +472,8 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
             
             Spacer(Modifier.height(24.dp))
             OutlinedTextField(
-                value = notes, onValueChange = { notes = it },
+                value = String(notesState.value), 
+                onValueChange = { notesState.value = it.toCharArray() },
                 label = { Text(stringResource(R.string.notes)) },
                 modifier = Modifier.fillMaxWidth().height(150.dp),
                 shape = RoundedCornerShape(12.dp)

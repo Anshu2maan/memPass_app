@@ -102,9 +102,19 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
             tempFile = File(shareDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)
             
-            val contentUri = FileProvider.getUriForFile(context, "com.example.mempass.fileprovider", tempFile)
+            sharePlainFile(tempFile.absolutePath, cleanName)
+        } catch (e: Exception) {
+            Log.e(TAG, "Share failed", e)
+            Toast.makeText(context, "Share failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun sharePlainFile(plainPath: String, displayName: String) {
+        try {
+            val file = validateFilePath(plainPath)
+            val contentUri = FileProvider.getUriForFile(context, "com.example.mempass.fileprovider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
-                type = getMimeType(cleanName)
+                type = getMimeType(displayName)
                 putExtra(Intent.EXTRA_STREAM, contentUri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -114,7 +124,6 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
             Log.e(TAG, "Share failed", e)
             Toast.makeText(context, "Share failed", Toast.LENGTH_SHORT).show()
         }
-        // tempFile is cleaned on app startup by SecurityUtils.clearTemporaryFiles()
     }
 
     fun viewFile(internalPath: String, key: SecretKeySpec, displayName: String) {
@@ -141,6 +150,5 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
             Log.e(TAG, "View failed", e)
             Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show()
         }
-        // tempFile is cleaned on app startup by SecurityUtils.clearTemporaryFiles()
     }
 }

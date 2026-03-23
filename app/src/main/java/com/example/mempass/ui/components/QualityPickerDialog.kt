@@ -31,6 +31,7 @@ sealed class QualityOption(val labelRes: Int, val sizeKb: Long?) {
 
 @Composable
 fun QualityPickerDialog(
+    titleRes: Int = R.string.share_options,
     originalSizeKb: Long? = null,
     onDismiss: () -> Unit,
     onQualitySelected: (QualityOption) -> Unit
@@ -64,7 +65,7 @@ fun QualityPickerDialog(
         title = {
             Column {
                 Text(
-                    stringResource(if (showCustomInput) R.string.custom_compression else R.string.share_options),
+                    stringResource(if (showCustomInput) R.string.custom_compression else titleRes),
                     fontWeight = FontWeight.Black,
                     fontSize = 22.sp
                 )

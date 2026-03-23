@@ -236,6 +236,9 @@
     <string name="discard">Discard</string>
     <string name="keep_editing">Keep Editing</string>
     <string name="original">Original</string>
+    <string name="import_quality">Import Quality</string>
+    <string name="delete_attachment_title">Delete Attachment?</string>
+    <string name="delete_attachment_desc">Are you sure you want to remove this file from the document?</string>
 
     <!-- Document Categories -->
     <string name="cat_identity">Identity</string>

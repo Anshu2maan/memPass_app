@@ -106,7 +106,6 @@ class DocumentViewModel @Inject constructor(
                 val decryptedBytes = FileEncryptor.decryptFile(encryptedFile, key)
                 val bitmap = android.graphics.BitmapFactory.decodeByteArray(decryptedBytes, 0, decryptedBytes.size)
                 
-                // Security: Wipe decrypted bytes from memory
                 java.util.Arrays.fill(decryptedBytes, 0.toByte())
                 
                 bitmap
@@ -138,9 +137,7 @@ class DocumentViewModel @Inject constructor(
                             (oldPaths - newPaths).forEach { fileUtils.deleteFileIfExists(it) }
                             
                             thumbnailPath = old.thumbnailPath
-                            // If first file changed, we might need a new thumbnail
                             if (filePaths.firstOrNull() != oldPaths.firstOrNull()) {
-                                // Handled below by checking if thumbnailPath is still null
                                 if (old.thumbnailPath != null) {
                                     fileUtils.deleteFileIfExists(old.thumbnailPath)
                                     thumbnailPath = null
@@ -148,10 +145,6 @@ class DocumentViewModel @Inject constructor(
                             }
                         }
                     }
-                    
-                    // Note: If thumbnail is null, it will be generated in saveUriToInternalEncrypted 
-                    // or we could trigger a re-gen here if needed from encrypted source (less efficient)
-                    // But usually saveUriToInternalEncrypted handles the new file imports.
 
                     val doc = DocumentEntry(
                         id = id, title = title, documentType = type,
@@ -180,6 +173,14 @@ class DocumentViewModel @Inject constructor(
         viewModelScope.launch { repository.insertDocument(entry.copy(isFavorite = !entry.isFavorite)) }
     }
 
+    fun toggleFavoriteForDocuments(entries: List<DocumentEntry>, favorite: Boolean) {
+        viewModelScope.launch {
+            entries.forEach { entry ->
+                repository.insertDocument(entry.copy(isFavorite = favorite))
+            }
+        }
+    }
+
     fun deleteDocument(entry: DocumentEntry) {
         viewModelScope.launch(Dispatchers.IO) {
             splitPaths(entry.filePaths).forEach { fileUtils.deleteFileIfExists(it) }
@@ -187,22 +188,29 @@ class DocumentViewModel @Inject constructor(
             repository.deleteDocument(entry)
         }
     }
+
+    fun deleteDocuments(entries: List<DocumentEntry>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            entries.forEach { entry ->
+                splitPaths(entry.filePaths).forEach { fileUtils.deleteFileIfExists(it) }
+                fileUtils.deleteFileIfExists(entry.thumbnailPath ?: "")
+                repository.deleteDocument(entry)
+            }
+        }
+    }
     
     suspend fun saveUriToInternalEncrypted(uri: Uri, quality: QualityOption = QualityOption.Original): Pair<String, String?>? = withContext(Dispatchers.IO) {
         val key = getVaultKey() ?: return@withContext null
         val context = getApplication<Application>()
         
-        // 1. Copy Uri to Temp
         val tempFile = fileUtils.uriToFile(uri)
         var fileToEncrypt = tempFile
         val extension = tempFile.extension.lowercase()
 
-        // 2. Generate Thumbnail while file is plain-text (Most Efficient)
         val thumbnailPath = if (extension != "pdf") {
             generateAndSaveThumbnailFromPlainFile(tempFile)
         } else null
 
-        // 3. Optional Compression
         if (quality.sizeKb != null) {
             val compressedFile = File(context.cacheDir, "save_comp_${UUID.randomUUID()}.$extension")
             val success = if (extension == "pdf") {
@@ -216,7 +224,6 @@ class DocumentViewModel @Inject constructor(
             }
         }
 
-        // 4. Encrypt
         val destination = File(context.filesDir, "doc_${UUID.randomUUID()}.$extension.enc")
         try {
             FileEncryptor.encryptFile(fileToEncrypt, destination, key)
@@ -281,7 +288,7 @@ class DocumentViewModel @Inject constructor(
                         "$displayName.$finalExtension"
                     }
 
-                    sharingUtils.shareFile(finalFileToShare.absolutePath, key, sharingDisplayName)
+                    sharingUtils.sharePlainFile(finalFileToShare.absolutePath, sharingDisplayName)
                     
                     viewModelScope.launch {
                         kotlinx.coroutines.delay(60000)
