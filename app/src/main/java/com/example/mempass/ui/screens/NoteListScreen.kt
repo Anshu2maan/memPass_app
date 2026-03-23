@@ -2,6 +2,7 @@ package com.example.mempass.ui.screens
 
 import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
@@ -26,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -68,7 +71,7 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Box(Modifier.padding(20.dp)) {
+            Box(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
                 ModernSearchBar(
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
@@ -87,7 +90,10 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
                     }.sortedWith(compareByDescending<NoteEntry> { it.isFavorite }.thenByDescending { it.createdAt })
                 }
 
-                LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 100.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(filtered, key = { it.id }) { note ->
                         NoteCard(note = note, onClick = { selectedNote = note })
                     }
@@ -113,35 +119,76 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
 
 @Composable
 fun NoteCard(note: NoteEntry, onClick: () -> Unit) {
+    val dateStr = remember(note.createdAt) { 
+        SimpleDateFormat("dd MMM", Locale.getDefault()).format(Date(note.createdAt))
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.05f))
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     color = BrandIndigo.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(
                         if(note.isLocked) Icons.Default.Lock else if(note.isChecklist) Icons.Default.Checklist else Icons.AutoMirrored.Filled.Notes,
                         null,
-                        Modifier.padding(8.dp).size(20.dp),
+                        Modifier.padding(10.dp).size(22.dp),
                         tint = BrandIndigo
                     )
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(note.title.ifEmpty { stringResource(R.string.untitled) }, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                    Text(note.category, fontSize = 12.sp, color = BrandIndigo, fontWeight = FontWeight.Medium)
+                    Text(
+                        note.title.ifEmpty { stringResource(R.string.untitled) }, 
+                        fontWeight = FontWeight.ExtraBold, 
+                        fontSize = 17.sp, 
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(note.category, fontSize = 12.sp, color = BrandIndigo, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), CircleShape))
+                        Spacer(Modifier.width(8.dp))
+                        Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                    }
                 }
                 if (note.isFavorite) {
-                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFB800), modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFB800), modifier = Modifier.size(20.dp))
                 }
-                if (note.selfDestructAt != null) {
-                    Icon(Icons.Default.Timer, null, tint = BrandRose, modifier = Modifier.size(16.dp))
+            }
+
+            if (!note.isLocked && note.snippetFilePaths.isNotEmpty()) {
+                val paths = note.snippetFilePaths.split("|").filter { it.isNotEmpty() }
+                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AttachFile, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.outline)
+                    Text(
+                        stringResource(R.string.attachments_count, paths.size), 
+                        fontSize = 12.sp, 
+                        color = MaterialTheme.colorScheme.outline,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            if (note.selfDestructAt != null) {
+                Surface(
+                    color = BrandRose.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(top = 12.dp)
+                ) {
+                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Timer, null, tint = BrandRose, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.burn_after_read), color = BrandRose, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -198,28 +245,39 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
 
         if (!isUnlocked) {
             Column(
-                Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                Modifier.fillMaxWidth().padding(vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Default.Lock, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
-                Spacer(Modifier.height(16.dp))
-                Text(stringResource(R.string.locked_note_title), fontWeight = FontWeight.Bold)
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = CircleShape,
+                    modifier = Modifier.size(80.dp)
+                ) {
+                    Icon(Icons.Default.Lock, null, Modifier.padding(20.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.height(20.dp))
+                Text(stringResource(R.string.locked_note_title), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
                 Text(
                     stringResource(R.string.locked_note_desc),
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    modifier = Modifier.padding(horizontal = 32.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 18.sp
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(32.dp))
                 
                 var showPinDialog by remember { mutableStateOf(false) }
                 Button(
                     onClick = { showPinDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.height(56.dp).fillMaxWidth(0.7f)
                 ) {
-                    Text(stringResource(R.string.unlock))
+                    Icon(Icons.Default.LockOpen, null)
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.unlock_vault_btn), fontWeight = FontWeight.Bold)
                 }
 
                 if (showPinDialog) {
@@ -234,7 +292,8 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
                                 label = { Text(stringResource(R.string.master_pin_label)) },
                                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
                             )
                         },
                         confirmButton = {
@@ -245,7 +304,7 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
                                 } else {
                                     Toast.makeText(context, context.getString(R.string.invalid_pin), Toast.LENGTH_SHORT).show()
                                 }
-                            }) { Text(stringResource(R.string.unlock)) }
+                            }, shape = RoundedCornerShape(12.dp)) { Text(stringResource(R.string.unlock)) }
                         }
                     )
                 }
@@ -258,8 +317,8 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
                     Text(
                         text,
                         modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(),
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp,
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -268,27 +327,35 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
             if (paths.isNotEmpty()) {
                 Text(
                     stringResource(R.string.attachments),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 24.dp, bottom = 12.dp)
                 )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(bottom = 12.dp)
+                ) {
                     items(paths) { path ->
                         Card(
-                            modifier = Modifier.size(240.dp, 180.dp).clip(RoundedCornerShape(20.dp)).clickable { 
+                            modifier = Modifier.size(width = 280.dp, height = 200.dp).clip(RoundedCornerShape(20.dp)).clickable { 
                                 viewModel.getVaultKey()?.let { viewModel.sharingUtils.viewFile(path, it, "Note_File_${System.currentTimeMillis()}.${path.substringAfterLast(".")}") }
                             },
                             shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                 val thumbnailState = produceState<Bitmap?>(null, path) {
-                                    value = viewModel.getVaultKey()?.let { viewModel.fileUtils.getThumbnail(path, 400, 300) }
+                                    value = viewModel.getVaultKey()?.let { viewModel.fileUtils.getThumbnail(path, 600, 450) }
                                 }
                                 if(thumbnailState.value != null) Image(thumbnailState.value!!.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                                else Icon(if(path.lowercase(Locale.ROOT).endsWith(".pdf")) Icons.Default.PictureAsPdf else Icons.Default.InsertDriveFile, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(if(path.lowercase(Locale.ROOT).endsWith(".pdf")) Icons.Default.PictureAsPdf else Icons.Default.InsertDriveFile, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(path.substringAfterLast("/").take(15) + "...", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                }
                             }
                         }
                     }
@@ -302,24 +369,25 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnloc
 @Composable
 fun ChecklistDisplay(content: String) {
     val lines = content.split("\n")
-    Column(modifier = Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         lines.forEach { line ->
             if (line.isNotBlank()) {
                 val isChecked = line.startsWith("[x] ")
                 val text = line.removePrefix("[x] ").removePrefix("[ ] ")
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Icon(
                         if (isChecked) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                         null,
-                        tint = if (isChecked) BrandIndigo else Color.Gray,
-                        modifier = Modifier.size(20.dp)
+                        tint = if (isChecked) BrandIndigo else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(14.dp))
                     Text(
                         text = text,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         color = if (isChecked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface,
-                        textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None
+                        textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }

@@ -294,6 +294,7 @@
     <string name="self_destruct_active">Self-destruct active</string>
     <string name="self_destruct_timer">Self-destructs in %1$dh %2$dm</string>
     <string name="destruction_date">Destruction Date: %1$s</string>
+    <string name="burn_after_read">Burn after reading</string>
     <string name="create_note">Create Note</string>
     <string name="edit_note">Edit Note</string>
     <string name="headline">Headline</string>
@@ -307,15 +308,18 @@
     <string name="self_destruct_timer_desc">Once the timer ends, this note will be permanently deleted from the vault.</string>
     <string name="duration_label">Duration (Hours)</string>
     <string name="set_custom_timer">Set Custom Timer</string>
+    <string name="set_timer">Set Timer</string>
     <string name="save">Save</string>
     <string name="locked_note_title">Locked Note</string>
     <string name="locked_note_desc">This note is protected with high-level encryption. Enter your PIN to view.</string>
+    <string name="unlock_vault_btn">Unlock Vault</string>
     <string name="encrypted_placeholder">ENCRYPTED</string>
     <string name="tags_placeholder">Tags (comma separated)</string>
     <string name="untitled">Untitled</string>
     <string name="unlock_vault">Unlock Vault</string>
     <string name="checklist_item">Checklist item</string>
     <string name="add_item">Add Item</string>
+    <string name="attachments_count">%1$d Attachments</string>
 
     <!-- Note Categories -->
     <string name="cat_personal">Personal</string>

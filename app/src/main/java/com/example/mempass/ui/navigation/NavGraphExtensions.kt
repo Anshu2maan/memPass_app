@@ -39,10 +39,13 @@ fun NavGraphBuilder.passwordGraph(navController: NavHostController) {
         val pwViewModel: PasswordViewModel = hiltViewModel()
         PasswordListScreen(navController, pwViewModel)
     }
-    composable("add_password?id={id}") { backStackEntry ->
-        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull() ?: 0
+    composable(
+        route = "add_password?id={id}",
+        arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })
+    ) { backStackEntry ->
+        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull()
         val pwViewModel: PasswordViewModel = hiltViewModel()
-        AddPasswordScreen(navController, pwViewModel, id)
+        AddPasswordScreen(navController, pwViewModel, id ?: 0)
     }
 }
 
@@ -51,10 +54,13 @@ fun NavGraphBuilder.documentGraph(navController: NavHostController) {
         val docViewModel: DocumentViewModel = hiltViewModel()
         DocumentListScreen(navController, docViewModel)
     }
-    composable("add_document?id={id}") { backStackEntry ->
-        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull() ?: 0
+    composable(
+        route = "add_document?id={id}",
+        arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })
+    ) { backStackEntry ->
+        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull()
         val docViewModel: DocumentViewModel = hiltViewModel()
-        AddDocumentScreen(navController, docViewModel, id)
+        AddDocumentScreen(navController, docViewModel, id ?: 0)
     }
 }
 
@@ -63,8 +69,11 @@ fun NavGraphBuilder.noteGraph(navController: NavHostController) {
         val noteViewModel: NoteViewModel = hiltViewModel()
         NoteListScreen(navController, noteViewModel)
     }
-    composable("add_note?id={id}") { backStackEntry ->
-        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull() ?: 0
+    composable(
+        route = "add_note?id={id}",
+        arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })
+    ) { backStackEntry ->
+        val id = backStackEntry.arguments?.getString("id")?.toIntOrNull()
         val noteViewModel: NoteViewModel = hiltViewModel()
         AddNoteScreen(navController, noteViewModel, id)
     }

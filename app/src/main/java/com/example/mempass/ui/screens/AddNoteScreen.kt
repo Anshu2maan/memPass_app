@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -172,111 +173,133 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
             )
         }
     ) { padding ->
-        Column(Modifier.padding(padding).padding(20.dp).verticalScroll(rememberScrollState())) {
-            OutlinedTextField(
-                value = headline,
-                onValueChange = { headline = it },
-                label = { Text(stringResource(R.string.headline)) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
-            Spacer(Modifier.height(16.dp))
-            
-            if (isChecklist) {
-                ChecklistEditor(
-                    content = content,
-                    onContentChange = { content = it }
-                )
-            } else {
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
                 OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    placeholder = { Text(stringResource(R.string.secrets_placeholder)) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    value = headline,
+                    onValueChange = { headline = it },
+                    label = { Text(stringResource(R.string.headline)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandIndigo,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
                 )
-            }
-            
-            Spacer(Modifier.height(20.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FilterChip(
-                    selected = category.isNotEmpty(),
-                    onClick = { showCategorySheet = true },
-                    label = { Text(if(category.isEmpty()) stringResource(R.string.category) else category) },
-                    leadingIcon = { Icon(Icons.Default.Category, null, Modifier.size(16.dp)) }
-                )
-                FilterChip(
-                    selected = isChecklist,
-                    onClick = { isChecklist = !isChecklist },
-                    label = { Text(stringResource(R.string.checklist)) },
-                    leadingIcon = { Icon(Icons.Default.Checklist, null, Modifier.size(16.dp)) }
-                )
-                FilterChip(
-                    selected = isLocked,
-                    onClick = { isLocked = !isLocked },
-                    label = { Text(if(isLocked) stringResource(R.string.lock) else stringResource(R.string.unlock)) },
-                    leadingIcon = { Icon(if(isLocked) Icons.Default.Lock else Icons.Default.LockOpen, null, Modifier.size(16.dp)) }
-                )
-                FilterChip(
-                    selected = selfDestructAt != null,
-                    onClick = { showTimerDialog = true },
-                    label = { Text(stringResource(R.string.timer)) },
-                    leadingIcon = { Icon(Icons.Default.Timer, null, Modifier.size(16.dp)) }
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = { fileLauncher.launch("*/*") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo.copy(alpha = 0.1f), contentColor = BrandIndigo)
-            ) {
-                Icon(Icons.Default.AttachFile, null)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.attach_files))
-            }
-
-            if (selfDestructAt != null) {
                 Spacer(Modifier.height(16.dp))
-                val dateStr = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(selfDestructAt!!))
-                Surface(color = BrandRose.copy(alpha = 0.08f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoDelete, null, tint = BrandRose, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text(stringResource(R.string.destruction_date, dateStr), fontSize = 13.sp, color = BrandRose, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { selfDestructAt = null }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, null, tint = BrandRose, modifier = Modifier.size(14.dp))
-                        }
-                    }
+                
+                if (isChecklist) {
+                    ChecklistEditor(
+                        content = content,
+                        onContentChange = { content = it }
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = content,
+                        onValueChange = { content = it },
+                        placeholder = { Text(stringResource(R.string.secrets_placeholder)) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BrandIndigo,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+                    )
                 }
-            }
-
-            if (attachedFiles.isNotEmpty()) {
+                
                 Spacer(Modifier.height(20.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(attachedFiles) { path ->
-                        Box(Modifier.size(90.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                            val thumbnailState = produceState<android.graphics.Bitmap?>(null, path) {
-                                value = viewModel.getVaultKey()?.let { viewModel.fileUtils.getThumbnail(path, 200, 200) }
-                            }
-                            thumbnailState.value?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                                ?: Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                            
-                            IconButton(onClick = { 
-                                attachedFiles = attachedFiles.filter { it != path }
-                                if (newlyAddedFiles.contains(path)) {
-                                    viewModel.deleteOrphanedFile(path)
-                                    newlyAddedFiles.remove(path)
-                                }
-                            }, modifier = Modifier.align(Alignment.TopEnd).size(24.dp).padding(4.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape)) {
-                                Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(10.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(end = 20.dp)
+                ) {
+                    item {
+                        FilterChip(
+                            selected = category.isNotEmpty(),
+                            onClick = { showCategorySheet = true },
+                            label = { Text(if(category.isEmpty()) stringResource(R.string.category) else category) },
+                            leadingIcon = { Icon(Icons.Default.Category, null, Modifier.size(16.dp)) }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = isChecklist,
+                            onClick = { isChecklist = !isChecklist },
+                            label = { Text(stringResource(R.string.checklist)) },
+                            leadingIcon = { Icon(Icons.Default.Checklist, null, Modifier.size(16.dp)) }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = isLocked,
+                            onClick = { isLocked = !isLocked },
+                            label = { Text(if(isLocked) stringResource(R.string.lock) else stringResource(R.string.unlock)) },
+                            leadingIcon = { Icon(if(isLocked) Icons.Default.Lock else Icons.Default.LockOpen, null, Modifier.size(16.dp)) }
+                        )
+                    }
+                    item {
+                        FilterChip(
+                            selected = selfDestructAt != null,
+                            onClick = { showTimerDialog = true },
+                            label = { Text(stringResource(R.string.timer)) },
+                            leadingIcon = { Icon(Icons.Default.Timer, null, Modifier.size(16.dp)) }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = { fileLauncher.launch("*/*") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo.copy(alpha = 0.1f), contentColor = BrandIndigo)
+                ) {
+                    Icon(Icons.Default.AttachFile, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.attach_files))
+                }
+
+                if (selfDestructAt != null) {
+                    Spacer(Modifier.height(16.dp))
+                    val dateStr = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(selfDestructAt!!))
+                    Surface(color = BrandRose.copy(alpha = 0.08f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AutoDelete, null, tint = BrandRose, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(stringResource(R.string.destruction_date, dateStr), fontSize = 13.sp, color = BrandRose, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { selfDestructAt = null }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, null, tint = BrandRose, modifier = Modifier.size(14.dp))
                             }
                         }
                     }
                 }
+
+                if (attachedFiles.isNotEmpty()) {
+                    Spacer(Modifier.height(20.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(attachedFiles) { path ->
+                            Box(Modifier.size(110.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                                val thumbnailState = produceState<android.graphics.Bitmap?>(null, path) {
+                                    value = viewModel.getVaultKey()?.let { viewModel.fileUtils.getThumbnail(path, 300, 300) }
+                                }
+                                thumbnailState.value?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                                    ?: Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                                
+                                IconButton(onClick = { 
+                                    attachedFiles = attachedFiles.filter { it != path }
+                                    if (newlyAddedFiles.contains(path)) {
+                                        viewModel.deleteOrphanedFile(path)
+                                        newlyAddedFiles.remove(path)
+                                    }
+                                }, modifier = Modifier.align(Alignment.TopEnd).size(28.dp).padding(4.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape)) {
+                                    Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
             }
         }
     }
@@ -291,7 +314,8 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                 stringResource(R.string.cat_idea),
                 stringResource(R.string.cat_checklist)
             )
-            LazyRow(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.select_category), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, bottom = 12.dp))
+            LazyRow(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(categories) { cat ->
                     FilterChip(
                         selected = category == cat,
@@ -318,16 +342,21 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                         onValueChange = { hours = it.filter { c -> c.isDigit() } },
                         label = { Text(stringResource(R.string.duration_label)) },
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    val h = hours.toLongOrNull() ?: 24
-                    selfDestructAt = System.currentTimeMillis() + (h * 60 * 60 * 1000)
-                    showTimerDialog = false
-                }) { Text(stringResource(R.string.set_custom_timer)) }
+                Button(
+                    onClick = {
+                        val h = hours.toLongOrNull() ?: 24
+                        selfDestructAt = System.currentTimeMillis() + (h * 60 * 60 * 1000)
+                        showTimerDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text(stringResource(R.string.set_timer)) }
             },
             dismissButton = {
                 TextButton(onClick = { showTimerDialog = false }) { Text(stringResource(R.string.cancel)) }
@@ -338,58 +367,75 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
 
 @Composable
 fun ChecklistEditor(content: String, onContentChange: (String) -> Unit) {
+    // We use a state that holds the actual list of strings to avoid excessive re-compositions and string manipulations
     val items = remember(content) { 
-        if (content.isBlank()) mutableListOf("") 
-        else content.split("\n").toMutableList()
+        if (content.isBlank()) mutableStateListOf("[ ] ") 
+        else {
+            val list = mutableStateListOf<String>()
+            list.addAll(content.split("\n"))
+            list
+        }
     }
     
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         items.forEachIndexed { index, item ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val isChecked = item.startsWith("[x] ")
-                val cleanText = item.removePrefix("[x] ").removePrefix("[ ] ")
-                
-                Checkbox(
-                    checked = isChecked,
-                    onCheckedChange = { checked ->
-                        items[index] = if(checked) "[x] $cleanText" else "[ ] $cleanText"
-                        onContentChange(items.joinToString("\n"))
-                    }
-                )
-                
-                TextField(
-                    value = cleanText,
-                    onValueChange = { newText ->
-                        items[index] = if(isChecked) "[x] $newText" else "[ ] $newText"
-                        onContentChange(items.joinToString("\n"))
-                    },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text(stringResource(R.string.checklist_item)) },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        errorContainerColor = Color.Transparent
+            key(index) { // Use key for better Lazy-like performance in Column
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    val isChecked = item.startsWith("[x] ")
+                    val cleanText = item.removePrefix("[x] ").removePrefix("[ ] ")
+                    
+                    Checkbox(
+                        checked = isChecked,
+                        onCheckedChange = { checked ->
+                            items[index] = if(checked) "[x] $cleanText" else "[ ] $cleanText"
+                            onContentChange(items.joinToString("\n"))
+                        },
+                        colors = CheckboxDefaults.colors(checkedColor = BrandIndigo)
                     )
-                )
-                
-                IconButton(onClick = {
-                    items.removeAt(index)
-                    if(items.isEmpty()) items.add("")
-                    onContentChange(items.joinToString("\n"))
-                }) {
-                    Icon(Icons.Default.Delete, null, tint = BrandRose, modifier = Modifier.size(20.dp))
+                    
+                    TextField(
+                        value = cleanText,
+                        onValueChange = { newText ->
+                            items[index] = if(isChecked) "[x] $newText" else "[ ] $newText"
+                            onContentChange(items.joinToString("\n"))
+                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(stringResource(R.string.checklist_item)) },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = 15.sp,
+                            textDecoration = if (isChecked) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                            color = if (isChecked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    
+                    IconButton(onClick = {
+                        items.removeAt(index)
+                        if(items.isEmpty()) items.add("[ ] ")
+                        onContentChange(items.joinToString("\n"))
+                    }) {
+                        Icon(Icons.Default.Delete, null, tint = BrandRose.copy(alpha = 0.6f), modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
         
-        TextButton(onClick = {
-            items.add("[ ] ")
-            onContentChange(items.joinToString("\n"))
-        }) {
-            Icon(Icons.Default.Add, null)
+        TextButton(
+            onClick = {
+                items.add("[ ] ")
+                onContentChange(items.joinToString("\n"))
+            },
+            colors = ButtonDefaults.textButtonColors(contentColor = BrandIndigo)
+        ) {
+            Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.add_item))
+            Text(stringResource(R.string.add_item), fontWeight = FontWeight.Medium)
         }
     }
 }
