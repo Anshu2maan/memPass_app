@@ -122,7 +122,8 @@ data class NoteEntry(
     val createdAt: Long = System.currentTimeMillis(),
     val fontFamily: String = "Default",
     val fontSize: Float = 16.0f,
-    val letterSpacing: Float = 0.0f
+    val letterSpacing: Float = 0.0f,
+    val isFavorite: Boolean = false
 ) : VaultEntity {
     override fun withId(id: Int) = copy(id = id)
 
@@ -132,12 +133,14 @@ data class NoteEntry(
         other as NoteEntry
         if (id != other.id) return false
         if (!encryptedContent.contentEquals(other.encryptedContent)) return false
+        if (isFavorite != other.isFavorite) return false
         return true
     }
 
     override fun hashCode(): Int {
         var result = id
         result = 31 * result + encryptedContent.contentHashCode()
+        result = 31 * result + isFavorite.hashCode()
         return result
     }
 }

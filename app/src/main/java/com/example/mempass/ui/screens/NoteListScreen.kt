@@ -1,6 +1,7 @@
 package com.example.mempass.ui.screens
 
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.example.mempass.CryptoUtils
 import com.example.mempass.NoteEntry
 import com.example.mempass.NoteViewModel
 import com.example.mempass.R
@@ -43,6 +45,7 @@ import java.util.*
 @Composable
 fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = hiltViewModel()) {
     val notes by viewModel.allNotes.collectAsState(initial = emptyList())
+    val unlockedIds by viewModel.unlockedNoteIds.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var selectedNote by remember { mutableStateOf<NoteEntry?>(null) }
 
@@ -75,11 +78,16 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
             if (notes.isEmpty()) {
                 ModernEmptyState(Icons.AutoMirrored.Filled.Notes, stringResource(R.string.no_notes))
             } else {
-                val filtered = notes.filter { it.title.contains(searchQuery, true) || it.category.contains(searchQuery, true) }
-                    .sortedByDescending { it.createdAt }
+                val filtered = remember(notes, searchQuery) {
+                    notes.filter { 
+                        it.title.contains(searchQuery, true) || 
+                        it.category.contains(searchQuery, true) ||
+                        it.tags.contains(searchQuery, true)
+                    }.sortedWith(compareByDescending<NoteEntry> { it.isFavorite }.thenByDescending { it.createdAt })
+                }
 
                 LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(filtered) { note ->
+                    items(filtered, key = { it.id }) { note ->
                         NoteCard(note = note, onClick = { selectedNote = note })
                     }
                 }
@@ -88,9 +96,12 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
     }
 
     if (selectedNote != null) {
+        // Re-fetch to get updated state
+        val currentNote = notes.find { it.id == selectedNote!!.id } ?: selectedNote!!
         NoteDetailDialog(
-            note = selectedNote!!,
+            note = currentNote,
             viewModel = viewModel,
+            isInitiallyUnlocked = unlockedIds.contains(currentNote.id),
             onDismiss = { selectedNote = null },
             onEdit = {
                 navController.navigate("add_note?editId=${selectedNote!!.id}")
@@ -122,8 +133,12 @@ fun NoteCard(note: NoteEntry, onClick: () -> Unit) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(note.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Text(note.title.ifEmpty { stringResource(R.string.untitled) }, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
                     Text(note.category, fontSize = 12.sp, color = BrandIndigo, fontWeight = FontWeight.Medium)
+                }
+                if (note.isFavorite) {
+                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFB800), modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
                 }
                 if (note.selfDestructAt != null) {
                     Icon(Icons.Default.Timer, null, tint = BrandRose, modifier = Modifier.size(16.dp))
@@ -134,22 +149,28 @@ fun NoteCard(note: NoteEntry, onClick: () -> Unit) {
 }
 
 @Composable
-fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, onDismiss: () -> Unit, onEdit: () -> Unit) {
+fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, isInitiallyUnlocked: Boolean, onDismiss: () -> Unit, onEdit: () -> Unit) {
+    val context = LocalContext.current
     var content by remember { mutableStateOf<String?>(null) }
-    var isUnlocked by remember { mutableStateOf(!note.isLocked) }
+    var isUnlocked by remember { mutableStateOf(!note.isLocked || isInitiallyUnlocked) }
     val paths = note.snippetFilePaths.split("|").filter { it.isNotEmpty() }
 
     LaunchedEffect(isUnlocked) {
         if (isUnlocked) {
-            content = String(viewModel.decryptToChars(note.encryptedContent))
+            val chars = viewModel.decryptToChars(note.encryptedContent)
+            content = String(chars)
+            CryptoUtils.wipe(chars)
+            if (note.isLocked) viewModel.markNoteAsUnlocked(note.id)
         }
     }
 
     DetailDialog(
-        title = note.title,
+        title = note.title.ifEmpty { stringResource(R.string.untitled) },
         onDismiss = onDismiss,
         onDelete = { viewModel.deleteNote(note); onDismiss() },
-        onEdit = onEdit
+        onEdit = onEdit,
+        onFavoriteToggle = { viewModel.toggleFavorite(note) },
+        isFavorite = note.isFavorite
     ) {
         if (note.selfDestructAt != null) {
             val remaining = note.selfDestructAt!! - System.currentTimeMillis()
@@ -191,12 +212,42 @@ fun NoteDetailDialog(note: NoteEntry, viewModel: NoteViewModel, onDismiss: () ->
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
                 Spacer(Modifier.height(24.dp))
+                
+                var showPinDialog by remember { mutableStateOf(false) }
                 Button(
-                    onClick = { /* ViewModel already handles unlock via PIN if integrated */ isUnlocked = true },
+                    onClick = { showPinDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(stringResource(R.string.unlock))
+                }
+
+                if (showPinDialog) {
+                    var pinInput by remember { mutableStateOf("") }
+                    AlertDialog(
+                        onDismissRequest = { showPinDialog = false },
+                        title = { Text(stringResource(R.string.unlock_vault)) },
+                        text = {
+                            OutlinedTextField(
+                                value = pinInput,
+                                onValueChange = { if(it.length <= 6) pinInput = it },
+                                label = { Text(stringResource(R.string.master_pin_label)) },
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                if (viewModel.unlockVault(pinInput.toCharArray())) {
+                                    isUnlocked = true
+                                    showPinDialog = false
+                                } else {
+                                    Toast.makeText(context, context.getString(R.string.invalid_pin), Toast.LENGTH_SHORT).show()
+                                }
+                            }) { Text(stringResource(R.string.unlock)) }
+                        }
+                    )
                 }
             }
         } else {

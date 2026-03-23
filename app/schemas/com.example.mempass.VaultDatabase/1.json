@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "faa443e274310129d2c546164a889918",
+    "identityHash": "09c3967960008f7892ef37f285ee1fa2",
     "entities": [
       {
         "tableName": "passwords",
@@ -192,7 +192,7 @@
       },
       {
         "tableName": "notes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `remoteId` TEXT NOT NULL, `title` TEXT NOT NULL, `encryptedContent` BLOB NOT NULL, `category` TEXT NOT NULL, `colorHex` TEXT NOT NULL, `isChecklist` INTEGER NOT NULL, `tags` TEXT NOT NULL, `snippetFilePaths` TEXT NOT NULL, `selfDestructAt` INTEGER, `isLocked` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `fontFamily` TEXT NOT NULL, `fontSize` REAL NOT NULL, `letterSpacing` REAL NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `remoteId` TEXT NOT NULL, `title` TEXT NOT NULL, `encryptedContent` BLOB NOT NULL, `category` TEXT NOT NULL, `colorHex` TEXT NOT NULL, `isChecklist` INTEGER NOT NULL, `tags` TEXT NOT NULL, `snippetFilePaths` TEXT NOT NULL, `selfDestructAt` INTEGER, `isLocked` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `fontFamily` TEXT NOT NULL, `fontSize` REAL NOT NULL, `letterSpacing` REAL NOT NULL, `isFavorite` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -283,6 +283,12 @@
             "columnName": "letterSpacing",
             "affinity": "REAL",
             "notNull": true
+          },
+          {
+            "fieldPath": "isFavorite",
+            "columnName": "isFavorite",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -308,7 +314,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'faa443e274310129d2c546164a889918')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '09c3967960008f7892ef37f285ee1fa2')"
     ]
   }
 }

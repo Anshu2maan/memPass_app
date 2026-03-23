@@ -1,6 +1,7 @@
 package com.example.mempass.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -12,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,10 +30,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.example.mempass.CryptoUtils
 import com.example.mempass.NoteEntry
 import com.example.mempass.NoteViewModel
 import com.example.mempass.R
@@ -46,47 +50,98 @@ import java.util.*
 fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = hiltViewModel(), editId: Int? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var headline by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
-    var isLocked by remember { mutableStateOf(false) }
-    var selfDestructAt by remember { mutableStateOf<Long?>(null) }
-    var attachedFiles by remember { mutableStateOf<List<String>>(emptyList()) }
+    
+    val notes by viewModel.allNotes.collectAsState(initial = emptyList())
+    val existingNote = remember(editId, notes) { if (editId != null) notes.find { it.id == editId } else null }
+
+    var headline by remember(existingNote) { mutableStateOf(existingNote?.title ?: "") }
+    var content by remember(existingNote) { 
+        val chars = if(existingNote != null) viewModel.decryptToChars(existingNote.encryptedContent) else CharArray(0)
+        val s = mutableStateOf(String(chars))
+        CryptoUtils.wipe(chars)
+        s
+    }
+    var category by remember(existingNote) { mutableStateOf(existingNote?.category ?: "") }
+    var isLocked by remember(existingNote) { mutableStateOf(existingNote?.isLocked ?: false) }
+    var isFavorite by remember(existingNote) { mutableStateOf(existingNote?.isFavorite ?: false) }
+    var selfDestructAt by remember(existingNote) { mutableStateOf(existingNote?.selfDestructAt) }
+    var attachedFiles by remember(existingNote) { 
+        val initialPaths = existingNote?.snippetFilePaths?.split("|")?.filter { it.isNotEmpty() } ?: emptyList()
+        mutableStateOf(initialPaths)
+    }
+    
+    val newlyAddedFiles = remember { mutableStateListOf<String>() }
     var showCategorySheet by remember { mutableStateOf(false) }
     var showTimerDialog by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    var showExitConfirmation by remember { mutableStateOf(false) }
+
+    val hasChanges = remember(headline, content, category, isLocked, isFavorite, selfDestructAt, attachedFiles) {
+        val initialContentChars = if(existingNote != null) viewModel.decryptToChars(existingNote.encryptedContent) else CharArray(0)
+        val initialContent = String(initialContentChars)
+        CryptoUtils.wipe(initialContentChars)
+        
+        headline != (existingNote?.title ?: "") ||
+        content != initialContent ||
+        category != (existingNote?.category ?: "") ||
+        isLocked != (existingNote?.isLocked ?: false) ||
+        isFavorite != (existingNote?.isFavorite ?: false) ||
+        selfDestructAt != existingNote?.selfDestructAt ||
+        attachedFiles != (existingNote?.snippetFilePaths?.split("|")?.filter { it.isNotEmpty() } ?: emptyList<String>())
+    }
+
+    val onExit: () -> Unit = {
+        if (hasChanges) showExitConfirmation = true else navController.popBackStack()
+    }
+
+    BackHandler(onBack = onExit)
 
     val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         scope.launch {
             uris.forEach { uri ->
                 val file = viewModel.uriToFile(uri)
                 val path = viewModel.encryptAndSave(file, "note_file_${UUID.randomUUID()}")
-                if (path.isNotEmpty()) attachedFiles = attachedFiles + path
+                if (path.isNotEmpty()) {
+                    attachedFiles = attachedFiles + path
+                    newlyAddedFiles.add(path)
+                }
             }
         }
     }
 
-    LaunchedEffect(editId) {
-        if (editId != null) {
-            viewModel.allNotes.collect { notes ->
-                notes.find { it.id == editId }?.let { note ->
-                    headline = note.title
-                    content = String(viewModel.decryptToChars(note.encryptedContent))
-                    category = note.category
-                    isLocked = note.isLocked
-                    selfDestructAt = note.selfDestructAt
-                    attachedFiles = note.snippetFilePaths.split("|").filter { it.isNotEmpty() }
+    if (showExitConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirmation = false },
+            title = { Text(stringResource(R.string.unsaved_changes_title)) },
+            text = { Text(stringResource(R.string.unsaved_changes_desc)) },
+            confirmButton = {
+                TextButton(onClick = { 
+                    newlyAddedFiles.forEach { viewModel.deleteOrphanedFile(it) }
+                    showExitConfirmation = false
+                    navController.popBackStack() 
+                }) {
+                    Text(stringResource(R.string.discard), color = BrandRose, fontWeight = FontWeight.Bold)
                 }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirmation = false }) { Text(stringResource(R.string.keep_editing)) }
             }
-        }
+        )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if(editId == null) stringResource(R.string.create_note) else stringResource(R.string.edit_note), fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
+                navigationIcon = { IconButton(onClick = onExit) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } },
                 actions = {
+                    IconButton(onClick = { isFavorite = !isFavorite }) {
+                        Icon(
+                            if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = null,
+                            tint = if (isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     if (isSaving) {
                         CircularProgressIndicator(Modifier.size(24.dp).padding(end = 16.dp), strokeWidth = 2.dp, color = BrandIndigo)
                     } else {
@@ -100,11 +155,14 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                                 snippetFilePaths = attachedFiles,
                                 selfDestructAt = selfDestructAt,
                                 isLocked = isLocked,
+                                isFavorite = isFavorite,
                                 id = editId ?: 0
-                            )
-                            navController.popBackStack()
+                            ) {
+                                isSaving = false
+                                navController.popBackStack()
+                            }
                         }) {
-                            Text(stringResource(R.string.save), color = BrandIndigo, fontWeight = FontWeight.Bold)
+                            Text(if(editId == null) stringResource(R.string.save) else stringResource(R.string.update_details), color = BrandIndigo, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -152,9 +210,7 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
 
             Spacer(Modifier.height(20.dp))
             Button(
-                onClick = { 
-                    fileLauncher.launch("*/*")
-                },
+                onClick = { fileLauncher.launch("*/*") },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = BrandIndigo.copy(alpha = 0.1f), contentColor = BrandIndigo)
@@ -192,7 +248,11 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                                 ?: Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
                             
                             IconButton(onClick = { 
-                                attachedFiles = attachedFiles.filter { it != path } 
+                                attachedFiles = attachedFiles.filter { it != path }
+                                if (newlyAddedFiles.contains(path)) {
+                                    viewModel.deleteOrphanedFile(path)
+                                    newlyAddedFiles.remove(path)
+                                }
                             }, modifier = Modifier.align(Alignment.TopEnd).size(24.dp).padding(4.dp).background(Color.Black.copy(alpha = 0.4f), CircleShape)) {
                                 Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(10.dp))
                             }
@@ -239,7 +299,8 @@ fun AddNoteScreen(navController: NavHostController, viewModel: NoteViewModel = h
                         value = hours,
                         onValueChange = { hours = it.filter { c -> c.isDigit() } },
                         label = { Text(stringResource(R.string.duration_label)) },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
                 }
             },

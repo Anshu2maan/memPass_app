@@ -301,6 +301,7 @@
     <string name="encrypted_placeholder">ENCRYPTED</string>
     <string name="tags_placeholder">Tags (comma separated)</string>
     <string name="untitled">Untitled</string>
+    <string name="unlock_vault">Unlock Vault</string>
 
     <!-- Note Categories -->
     <string name="cat_personal">Personal</string>

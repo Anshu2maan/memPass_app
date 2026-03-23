@@ -9,8 +9,10 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -35,20 +37,18 @@ class NoteViewModel @Inject constructor(
         const val PATH_SEPARATOR = "|"
     }
 
-    // Automatically filter and cleanup expired notes whenever the list is collected
     val allNotes: Flow<List<NoteEntry>> = repository.allNotes.map { notes ->
         val currentTime = System.currentTimeMillis()
         val (expired, valid) = notes.partition { it.selfDestructAt != null && it.selfDestructAt!! <= currentTime }
         
         if (expired.isNotEmpty()) {
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.IO) {
                 expired.forEach { deleteNote(it) }
             }
         }
         valid
     }
     
-    // Session-based unlocked notes
     private val _unlockedNoteIds = MutableStateFlow<Set<Int>>(emptySet())
     val unlockedNoteIds: StateFlow<Set<Int>> = _unlockedNoteIds
 
@@ -69,11 +69,13 @@ class NoteViewModel @Inject constructor(
         tags: String = "", 
         snippetFilePaths: List<String> = emptyList(), 
         selfDestructAt: Long? = null, 
-        isLocked: Boolean = false, 
-        id: Int = 0
+        isLocked: Boolean = false,
+        isFavorite: Boolean = false,
+        id: Int = 0,
+        onComplete: () -> Unit = {}
     ) {
         val key = getVaultKey() ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 var existingRemoteId: String? = null
                 if (id != 0) {
@@ -91,7 +93,7 @@ class NoteViewModel @Inject constructor(
                     title = title.trim(), encryptedContent = CryptoUtils.encrypt(content, key),
                     category = category, colorHex = colorHex, isChecklist = isChecklist,
                     tags = cleanedTags, snippetFilePaths = snippetFilePaths.joinToString(PATH_SEPARATOR),
-                    selfDestructAt = selfDestructAt, isLocked = isLocked
+                    selfDestructAt = selfDestructAt, isLocked = isLocked, isFavorite = isFavorite
                 )
                 repository.insertNote(noteEntry)
 
@@ -105,24 +107,30 @@ class NoteViewModel @Inject constructor(
                         workManager.enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.REPLACE, workRequest)
                     } else { deleteNote(noteEntry) }
                 } else { workManager.cancelUniqueWork(uniqueWorkName) }
-            } catch (e: CryptographyException) {
-                Log.e("NoteViewModel", "Failed to save note due to crypto error", e)
-                emitCryptoError("Failed to save note: ${e.message}")
+                
+                withContext(Dispatchers.Main) { onComplete() }
             } catch (e: Exception) {
                 Log.e("NoteViewModel", "Failed to save note", e)
+                withContext(Dispatchers.Main) { onComplete() }
             }
         }
     }
 
-    fun toggleNoteLock(entry: NoteEntry) {
-        viewModelScope.launch { repository.insertNote(entry.copy(isLocked = !entry.isLocked)) }
+    fun toggleFavorite(entry: NoteEntry) {
+        viewModelScope.launch { repository.insertNote(entry.copy(isFavorite = !entry.isFavorite)) }
     }
 
     fun deleteNote(entry: NoteEntry) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             entry.snippetFilePaths.split(PATH_SEPARATOR).filter { it.isNotEmpty() }.forEach { fileUtils.deleteFileIfExists(it) }
             WorkManager.getInstance(getApplication()).cancelUniqueWork("self_destruct_${entry.remoteId}")
             repository.deleteNote(entry)
+        }
+    }
+
+    fun deleteOrphanedFile(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            fileUtils.deleteFileIfExists(path)
         }
     }
     
