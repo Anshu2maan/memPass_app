@@ -209,13 +209,12 @@ fun DocumentItem(
     onClick: () -> Unit,
     onShare: () -> Unit
 ) {
-    val context = LocalContext.current
     var thumbnail by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    val key = viewModel.getVaultKey()
+    val isUnlocked by viewModel.isUnlocked.collectAsState()
 
-    LaunchedEffect(doc.thumbnailPath, key) {
-        if (doc.thumbnailPath != null && key != null) {
-            thumbnail = viewModel.fileUtils.getThumbnail(doc.thumbnailPath!!, 200, 200)
+    LaunchedEffect(doc.thumbnailPath, isUnlocked) {
+        if (doc.thumbnailPath != null && isUnlocked) {
+            thumbnail = viewModel.getDecryptedThumbnail(doc.thumbnailPath!!)
         }
     }
 

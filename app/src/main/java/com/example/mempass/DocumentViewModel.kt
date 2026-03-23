@@ -74,21 +74,46 @@ class DocumentViewModel @Inject constructor(
         }
     }
 
-    suspend fun generateAndSaveThumbnail(filePath: String): String? {
+    private suspend fun generateAndSaveThumbnailFromPlainFile(plainFile: File): String? {
         val key = getVaultKey() ?: return null
-        return try {
-            val bitmap = fileUtils.getThumbnail(filePath, 300, 300) ?: return null
-            val thumbnailFile = File(getApplication<Application>().filesDir, "thumb_${UUID.randomUUID()}.enc")
-            val tempFile = File(getApplication<Application>().cacheDir, "temp_thumb")
-            FileOutputStream(tempFile).use { out ->
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+        return withContext(Dispatchers.IO) {
+            try {
+                val bitmap = ImageUtils.decodeSampledBitmap(plainFile.absolutePath, 300, 300) ?: return@withContext null
+                val thumbnailFile = File(getApplication<Application>().filesDir, "thumb_${UUID.randomUUID()}.enc")
+                val tempThumb = File(getApplication<Application>().cacheDir, "temp_thumb_${UUID.randomUUID()}")
+                
+                FileOutputStream(tempThumb).use { out ->
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+                }
+                
+                FileEncryptor.encryptFile(tempThumb, thumbnailFile, key)
+                if (tempThumb.exists()) tempThumb.delete()
+                thumbnailFile.absolutePath
+            } catch (e: Exception) {
+                Log.e("DocumentViewModel", "Thumbnail generation failed", e)
+                null
             }
-            FileEncryptor.encryptFile(tempFile, thumbnailFile, key)
-            if (tempFile.exists()) tempFile.delete()
-            thumbnailFile.absolutePath
-        } catch (e: Throwable) {
-            Log.e("DocumentViewModel", "Thumbnail generation failed", e)
-            null
+        }
+    }
+
+    suspend fun getDecryptedThumbnail(path: String): android.graphics.Bitmap? {
+        val key = getVaultKey() ?: return null
+        return withContext(Dispatchers.IO) {
+            try {
+                val encryptedFile = File(path)
+                if (!encryptedFile.exists()) return@withContext null
+                
+                val decryptedBytes = FileEncryptor.decryptFile(encryptedFile, key)
+                val bitmap = android.graphics.BitmapFactory.decodeByteArray(decryptedBytes, 0, decryptedBytes.size)
+                
+                // Security: Wipe decrypted bytes from memory
+                java.util.Arrays.fill(decryptedBytes, 0.toByte())
+                
+                bitmap
+            } catch (e: Exception) {
+                Log.e("DocumentViewModel", "Failed to decrypt thumbnail", e)
+                null
+            }
         }
     }
 
@@ -113,21 +138,20 @@ class DocumentViewModel @Inject constructor(
                             (oldPaths - newPaths).forEach { fileUtils.deleteFileIfExists(it) }
                             
                             thumbnailPath = old.thumbnailPath
+                            // If first file changed, we might need a new thumbnail
                             if (filePaths.firstOrNull() != oldPaths.firstOrNull()) {
-                                fileUtils.deleteFileIfExists(old.thumbnailPath ?: "")
-                                thumbnailPath = null
+                                // Handled below by checking if thumbnailPath is still null
+                                if (old.thumbnailPath != null) {
+                                    fileUtils.deleteFileIfExists(old.thumbnailPath)
+                                    thumbnailPath = null
+                                }
                             }
                         }
                     }
                     
-                    if (thumbnailPath == null && filePaths.isNotEmpty()) {
-                        thumbnailPath = try {
-                            generateAndSaveThumbnail(filePaths.first())
-                        } catch (e: Exception) {
-                            Log.e("DocumentViewModel", "Failed to generate thumbnail", e)
-                            null
-                        }
-                    }
+                    // Note: If thumbnail is null, it will be generated in saveUriToInternalEncrypted 
+                    // or we could trigger a re-gen here if needed from encrypted source (less efficient)
+                    // But usually saveUriToInternalEncrypted handles the new file imports.
 
                     val doc = DocumentEntry(
                         id = id, title = title, documentType = type,
@@ -164,7 +188,7 @@ class DocumentViewModel @Inject constructor(
         }
     }
     
-    suspend fun saveUriToInternalEncrypted(uri: Uri, quality: QualityOption = QualityOption.Original): String? = withContext(Dispatchers.IO) {
+    suspend fun saveUriToInternalEncrypted(uri: Uri, quality: QualityOption = QualityOption.Original): Pair<String, String?>? = withContext(Dispatchers.IO) {
         val key = getVaultKey() ?: return@withContext null
         val context = getApplication<Application>()
         
@@ -173,7 +197,12 @@ class DocumentViewModel @Inject constructor(
         var fileToEncrypt = tempFile
         val extension = tempFile.extension.lowercase()
 
-        // 2. Optional Compression
+        // 2. Generate Thumbnail while file is plain-text (Most Efficient)
+        val thumbnailPath = if (extension != "pdf") {
+            generateAndSaveThumbnailFromPlainFile(tempFile)
+        } else null
+
+        // 3. Optional Compression
         if (quality.sizeKb != null) {
             val compressedFile = File(context.cacheDir, "save_comp_${UUID.randomUUID()}.$extension")
             val success = if (extension == "pdf") {
@@ -187,11 +216,11 @@ class DocumentViewModel @Inject constructor(
             }
         }
 
-        // 3. Encrypt
+        // 4. Encrypt
         val destination = File(context.filesDir, "doc_${UUID.randomUUID()}.$extension.enc")
         try {
             FileEncryptor.encryptFile(fileToEncrypt, destination, key)
-            destination.absolutePath
+            Pair(destination.absolutePath, thumbnailPath)
         } catch (e: Exception) {
             Log.e("DocumentViewModel", "Encryption failed", e)
             null

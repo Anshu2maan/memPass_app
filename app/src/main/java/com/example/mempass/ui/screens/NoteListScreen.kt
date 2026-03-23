@@ -104,7 +104,7 @@ fun NoteListScreen(navController: NavHostController, viewModel: NoteViewModel = 
             isInitiallyUnlocked = unlockedIds.contains(currentNote.id),
             onDismiss = { selectedNote = null },
             onEdit = {
-                navController.navigate("add_note?editId=${selectedNote!!.id}")
+                navController.navigate("add_note?id=${selectedNote!!.id}")
                 selectedNote = null
             }
         )

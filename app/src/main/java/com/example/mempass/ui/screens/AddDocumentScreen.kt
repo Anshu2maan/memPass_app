@@ -80,6 +80,7 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
     var filePaths by remember(existingDoc) { 
         mutableStateOf(DocumentViewModel.splitPaths(existingDoc?.filePaths))
     }
+    var thumbnailPath by remember(existingDoc) { mutableStateOf(existingDoc?.thumbnailPath) }
     val newlyAddedFiles = remember { mutableStateListOf<String>() }
     
     var expiryDate by remember(existingDoc) { mutableStateOf(existingDoc?.expiryDate) }
@@ -123,16 +124,21 @@ fun AddDocumentScreen(navController: NavHostController, viewModel: DocumentViewM
 
     if (showQualityPickerForImport != null) {
         QualityPickerDialog(
-            originalSizeKb = 0, // Not strictly needed for logic, but can be improved
+            originalSizeKb = 0, 
             onDismiss = { showQualityPickerForImport = null },
             onQualitySelected = { quality ->
                 isAttaching = true
                 scope.launch {
-                    val path = viewModel.saveUriToInternalEncrypted(showQualityPickerForImport!!, quality)
-                    if (path != null) {
+                    val result = viewModel.saveUriToInternalEncrypted(showQualityPickerForImport!!, quality)
+                    if (result != null) {
+                        val path = result.first
                         if (!filePaths.contains(path)) {
                             filePaths = filePaths + path
                             newlyAddedFiles.add(path)
+                            // Update thumbnail if this is the first file
+                            if (thumbnailPath == null && result.second != null) {
+                                thumbnailPath = result.second
+                            }
                         }
                     } else {
                         Toast.makeText(context, context.getString(R.string.files_failed_to_encrypt), Toast.LENGTH_SHORT).show()

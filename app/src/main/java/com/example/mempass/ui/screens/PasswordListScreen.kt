@@ -121,7 +121,7 @@ fun PasswordListScreen(navController: NavHostController, viewModel: PasswordView
             viewModel = viewModel,
             onDismiss = { selectedEntry = null },
             onEdit = { 
-                navController.navigate("add_password?editId=${selectedEntry!!.id}")
+                navController.navigate("add_password?id=${selectedEntry!!.id}")
                 selectedEntry = null
             }
         )
