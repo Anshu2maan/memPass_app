@@ -106,16 +106,16 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
+            
+            // SECURITY FIX (Finding #15): Isolated directory and proactive cleanup
             val shareDir = File(context.cacheDir, "shared_files")
-            if (!shareDir.exists()) shareDir.mkdirs()
+            shareDir.deleteRecursively() 
+            shareDir.mkdirs()
             
             tempFile = File(shareDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)
             
             sharePlainFile(tempFile.absolutePath, cleanName)
-            
-            // Clean up other files in shareDir
-            shareDir.listFiles()?.filter { it.name != tempFile?.name }?.forEach { it.delete() }
             
         } catch (e: Exception) {
             Log.e(TAG, "Share failed", e)
@@ -148,11 +148,11 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
-            val viewDir = File(context.cacheDir, "view_files")
-            if (!viewDir.exists()) viewDir.mkdirs()
             
-            // Clear previous view files
-            viewDir.listFiles()?.forEach { it.delete() }
+            // SECURITY FIX (Finding #15): Proactive cleanup to ensure only ONE decrypted file exists
+            val viewDir = File(context.cacheDir, "view_files")
+            viewDir.deleteRecursively()
+            viewDir.mkdirs()
             
             tempFile = File(viewDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)

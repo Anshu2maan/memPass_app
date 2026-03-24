@@ -17,6 +17,9 @@ class MemPassApplication : Application(), Configuration.Provider {
         super.onCreate()
         // Initialize SQLCipher
         SQLiteDatabase.loadLibs(this)
+        
+        // SECURITY FIX: Clear all temporary/decrypted files on startup (Finding #15)
+        SecurityUtils.clearTemporaryFiles(this)
     }
 
     override val workManagerConfiguration: Configuration
