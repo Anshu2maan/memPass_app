@@ -15,7 +15,6 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import com.example.mempass.common.Constants
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.StandardCharsets
@@ -134,6 +133,7 @@ class BiometricHelper @Inject constructor(
                 title = context.getString(R.string.enable_fp),
                 subtitle = context.getString(R.string.fp_subtitle),
                 onSuccess = { result ->
+                    // SECURITY FIX: Convert CharArray to ByteArray securely and zero it out after use (Finding #8)
                     val pinBytes = charToBytes(pin)
                     try {
                         val encryptedBytes = result.cryptoObject?.cipher?.doFinal(pinBytes)
@@ -190,6 +190,7 @@ class BiometricHelper @Inject constructor(
                 onSuccess = { result ->
                     val decryptedBytes = result.cryptoObject?.cipher?.doFinal(encryptedPin)
                     if (decryptedBytes != null) {
+                        // SECURITY FIX: Convert bytes to CharArray and zero out sensitive bytes (Finding #8)
                         val pinChars = bytesToChars(decryptedBytes)
                         Arrays.fill(decryptedBytes, 0.toByte())
                         onSuccess(pinChars)

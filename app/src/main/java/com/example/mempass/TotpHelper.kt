@@ -86,7 +86,7 @@ object TotpHelper {
 
     /**
      * Internal Base32 decoder.
-     * Throws IllegalArgumentException on invalid input.
+     * SECURITY FIX: Throw IllegalArgumentException on invalid input instead of skipping (Finding #21).
      */
     private fun decodeBase32(secret: CharArray): ByteArray {
         val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -96,8 +96,9 @@ object TotpHelper {
         var buffer = 0
         var bitsLeft = 0
         var index = 0
-        // Base32: 8 chars -> 5 bytes. 1 char -> 5 bits.
-        val out = ByteArray((secret.size * 5) / 8)
+        
+        // Base32: 8 chars -> 5 bytes. Pre-calculate max possible size.
+        val out = ByteArray((secret.size * 5 + 7) / 8)
 
         for (char in secret) {
             if (char.isWhitespace() || char == '=') continue
@@ -106,6 +107,7 @@ object TotpHelper {
             val valIndex = if (charCode < iKey.size) iKey[charCode] else -1
             
             if (valIndex == -1) {
+                // Finding #21: Don't ignore invalid chars. Throw exception.
                 throw IllegalArgumentException("Invalid Base32 character: $char")
             }
             
@@ -118,6 +120,11 @@ object TotpHelper {
                 bitsLeft -= 8
             }
         }
+        
+        if (index == 0 && secret.isNotEmpty()) {
+             throw IllegalArgumentException("No valid Base32 data found")
+        }
+
         return out.copyOf(index)
     }
 }

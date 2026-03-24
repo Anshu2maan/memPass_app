@@ -50,9 +50,6 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
     }
 
-    /**
-     * Common logic to export any file to the Downloads/MemPass directory.
-     */
     private fun exportToMediaStore(internalPath: String, displayName: String, processStream: (InputStream, OutputStream) -> Unit) {
         try {
             val sourceFile = validateFilePath(internalPath)
@@ -92,18 +89,12 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
         }
     }
 
-    /**
-     * Exports an encrypted file by decrypting it on the fly using the provided key.
-     */
     fun exportDecryptedFile(internalPath: String, key: SecretKeySpec, displayName: String) {
         exportToMediaStore(internalPath, displayName) { input, output ->
             FileEncryptor.decryptStreamToStream(input, output, key)
         }
     }
 
-    /**
-     * Exports a file as-is without any modification.
-     */
     fun exportRawFile(internalPath: String, displayName: String) {
         exportToMediaStore(internalPath, displayName) { input, output ->
             input.copyTo(output)
@@ -111,22 +102,25 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
     }
 
     fun shareFile(internalPath: String, key: SecretKeySpec, displayName: String) {
+        var tempFile: File? = null
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
             val shareDir = File(context.cacheDir, "shared_files")
             if (!shareDir.exists()) shareDir.mkdirs()
             
-            // Clear previous shared files to save space
-            shareDir.listFiles()?.forEach { it.delete() }
-
-            val tempFile = File(shareDir, cleanName)
+            tempFile = File(shareDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)
             
             sharePlainFile(tempFile.absolutePath, cleanName)
+            
+            // Clean up other files in shareDir
+            shareDir.listFiles()?.filter { it.name != tempFile?.name }?.forEach { it.delete() }
+            
         } catch (e: Exception) {
             Log.e(TAG, "Share failed", e)
             Toast.makeText(context, "Share failed", Toast.LENGTH_SHORT).show()
+            tempFile?.delete()
         }
     }
 
@@ -150,15 +144,17 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
     }
 
     fun viewFile(internalPath: String, key: SecretKeySpec, displayName: String) {
+        var tempFile: File? = null
         try {
             val sourceFile = validateFilePath(internalPath)
             val cleanName = getCleanDisplayName(displayName)
             val viewDir = File(context.cacheDir, "view_files")
             if (!viewDir.exists()) viewDir.mkdirs()
             
+            // Clear previous view files
             viewDir.listFiles()?.forEach { it.delete() }
             
-            val tempFile = File(viewDir, cleanName)
+            tempFile = File(viewDir, cleanName)
             FileEncryptor.decryptFileToFile(sourceFile, tempFile, key)
             
             val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
@@ -171,6 +167,7 @@ class SharingUtils @Inject constructor(@ApplicationContext private val context: 
         } catch (e: Exception) {
             Log.e(TAG, "View failed", e)
             Toast.makeText(context, "Cannot open file", Toast.LENGTH_SHORT).show()
+            tempFile?.delete()
         }
     }
 }

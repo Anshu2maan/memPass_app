@@ -358,7 +358,7 @@ class DocumentViewModel @Inject constructor(
                         "$displayName.$finalExtension"
                     }
 
-                    sharingUtils.sharePlainFile(finalFileToShare.absolutePath, sharingDisplayName)
+                    sharingUtils.shareFile(finalFileToShare.absolutePath, key, sharingDisplayName)
                     
                     viewModelScope.launch {
                         kotlinx.coroutines.delay(60000)
@@ -372,5 +372,10 @@ class DocumentViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun shareDocument(entry: DocumentEntry, quality: QualityOption = QualityOption.Original) {
+        val path = splitPaths(entry.filePaths).firstOrNull() ?: return
+        shareDocument(path, entry.title, quality)
     }
 }

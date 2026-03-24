@@ -10,10 +10,10 @@ object Constants {
     const val GRACE_PERIOD_MS = 5 * 60 * 1000L 
     
     /**
-     * Argon2id Parameters (Production-ready)
+     * Argon2id Parameters (Hardened for Production)
      * 
-     * Rationale: These parameters provide strong resistance against GPU and ASIC-based brute-force attacks.
-     * Argon2id is used to provide both side-channel resistance and memory-hard security.
+     * SECURITY FIX: Increased parameters to meet OWASP recommendations (Finding #12).
+     * These values ensure strong resistance against GPU and ASIC-based brute-force attacks.
      * 
      * - Memory (64MB): High enough to be expensive for attackers but manageable for modern mobile devices.
      * - Iterations (3): Ensures sufficient computational time to slow down brute-force attempts.
