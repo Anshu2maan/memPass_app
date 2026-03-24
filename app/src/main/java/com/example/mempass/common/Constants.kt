@@ -7,7 +7,7 @@ object Constants {
     const val BASE_LOCKOUT_MS = 30 * 1000L 
     const val MAX_LOCKOUT_MS = 24 * 60 * 60 * 1000L 
     const val RECOVERY_KEY_LENGTH = 24
-    const val GRACE_PERIOD_MS = 5 * 60 * 1000L 
+    const val GRACE_PERIOD_MS = 30 * 1000L // 30 Seconds for security (Finding #28)
     
     /**
      * Argon2id Parameters (Hardened for Production)
